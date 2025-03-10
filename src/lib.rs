@@ -1,4 +1,4 @@
-mod face_detect;
+pub mod face_detect;
+pub mod face_parsing;
 pub mod frame;
-mod face_parsing;
-mod utils;
+pub mod utils;

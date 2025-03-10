@@ -1,15 +1,17 @@
 use crate::frame::ProcessFrame;
 use anyhow::{Context, Result};
-use image::{imageops, imageops::FilterType, DynamicImage, GrayImage, ImageBuffer, Luma, Rgb, RgbImage};
+use image::{
+    imageops, imageops::FilterType, DynamicImage, GrayImage, ImageBuffer, Luma, Rgb, RgbImage,
+};
 use ndarray::{Array, Dim};
 
+use crate::face_detect::face_detect::FaceDetector;
+use crate::face_parsing::face_parsing::{FaceParsing, FaceRawData};
 use ort::{
     session::{builder::GraphOptimizationLevel, Session},
     value::TensorRef,
 };
 use std::path::Path;
-use crate::face_detect::face_detect::FaceDetector;
-use crate::face_parsing::face_parsing::{FaceParsing, FaceRawData};
 
 pub struct FaceEnhancer {
     gfpgan: Session,
@@ -89,7 +91,6 @@ impl ProcessFrame for FaceEnhancer {
 
             // 融合到原图
             self.blend_face(&mut final_img, &restored_resized, &mask_resized, x, y);
-
         }
         Ok(final_img)
     }
@@ -136,7 +137,10 @@ impl FaceEnhancer {
         Ok(processed_image)
     }
 
-    fn detect_and_align_faces(&mut self, img: &DynamicImage) -> Result<Vec<(DynamicImage, (i32, i32, u32, u32))>> {
+    fn detect_and_align_faces(
+        &mut self,
+        img: &DynamicImage,
+    ) -> Result<Vec<(DynamicImage, (u32, u32, u32, u32))>> {
         self.face_detector.detect(img)
     }
 
@@ -162,8 +166,8 @@ impl FaceEnhancer {
         background: &mut RgbImage,
         face: &DynamicImage,
         mask: &GrayImage,
-        x: i32,
-        y: i32,
+        x: u32,
+        y: u32,
     ) {
         let face_rgb = face.to_rgb8();
         let (width, height) = (face_rgb.width(), face_rgb.height());

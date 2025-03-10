@@ -1,7 +1,7 @@
-use swapper_rs::frame::enhance::FaceEnhancer;
 use anyhow::{Context, Result};
 use ort::execution_providers::CoreMLExecutionProvider;
 use std::path::Path;
+use swapper_rs::frame::enhance::FaceEnhancer;
 use swapper_rs::frame::ProcessFrame;
 
 fn main() -> Result<()> {

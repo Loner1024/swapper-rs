@@ -1,9 +1,12 @@
-use image::DynamicImage;
 use image::imageops::FilterType;
+use image::DynamicImage;
 use ndarray::{Array, ArrayBase, Dim, Ix, OwnedRepr};
 
 // 预处理图像为模型输入格式
-pub fn preprocess_image(img: &DynamicImage, target_size: (u32, u32)) -> anyhow::Result<ArrayBase<OwnedRepr<f32>, Dim<[Ix; 4]>>> {
+pub fn preprocess_image(
+    img: &DynamicImage,
+    target_size: (u32, u32),
+) -> anyhow::Result<ArrayBase<OwnedRepr<f32>, Dim<[Ix; 4]>>> {
     // 调整图像大小
     let img_resized = img.resize_exact(target_size.0, target_size.1, FilterType::Triangle);
 

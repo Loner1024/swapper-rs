@@ -1,23 +1,29 @@
+use crate::log;
 use anyhow::Context;
-use opencv::objdetect::CascadeClassifier;
 use anyhow::Result;
-use image::DynamicImage;
 use image::imageops::FilterType;
+use image::DynamicImage;
 use opencv::core::{Mat, MatTraitConstManual, Mat_, Point, Rect, Size, Vector};
 use opencv::objdetect;
+use opencv::objdetect::CascadeClassifier;
 use opencv::prelude::{CascadeClassifierTrait, MatTraitConst};
 
 pub struct FaceDetector {
-    dector: CascadeClassifier
+    dector: CascadeClassifier,
 }
 
 impl FaceDetector {
     pub fn new(cascade_path: &str) -> Result<Self> {
         let face_detector = CascadeClassifier::new(cascade_path).context("无法加载人脸检测模型")?;
-        Ok(Self { dector: face_detector })
+        Ok(Self {
+            dector: face_detector,
+        })
     }
 
-    pub fn detect(&mut self, img: &DynamicImage) -> Result<Vec<(DynamicImage, (i32, i32, u32, u32))>> {
+    pub fn detect(
+        &mut self,
+        img: &DynamicImage,
+    ) -> Result<Vec<(DynamicImage, (u32, u32, u32, u32))>> {
         // 1. 转换图像到OpenCV兼容格式
         let gray_img = img.to_luma8();
         let src_mat = Mat::from_slice(gray_img.as_raw())?;
@@ -70,11 +76,14 @@ impl FaceDetector {
             let aligned = cropped.resize_exact(512, 512, FilterType::Lanczos3);
 
             // 保存坐标和实际尺寸
-            results.push((aligned, (x_start, y_start, width as u32, height as u32)));
+            results.push((
+                aligned,
+                (x_start as u32, y_start as u32, width as u32, height as u32),
+            ));
         }
 
         // 调试输出
-        println!("检测到 {} 个人脸", results.len());
+        log!("检测到 {} 个人脸", results.len());
 
         Ok(results)
     }
