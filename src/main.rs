@@ -1,12 +1,8 @@
-use crate::frame::ProcessFrame;
+use swapper_rs::frame::enhance::FaceEnhancer;
 use anyhow::{Context, Result};
-use frame::enhance::FaceEnhancer;
 use ort::execution_providers::CoreMLExecutionProvider;
 use std::path::Path;
-
-mod frame;
-mod face_parsing;
-mod utils;
+use swapper_rs::frame::ProcessFrame;
 
 fn main() -> Result<()> {
     // 初始化ONNX Runtime
