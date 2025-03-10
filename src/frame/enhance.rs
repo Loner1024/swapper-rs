@@ -1,8 +1,6 @@
 use crate::frame::ProcessFrame;
 use anyhow::{Context, Result};
-use image::{
-    imageops, imageops::FilterType, DynamicImage, GrayImage, ImageBuffer, Luma, Rgb, RgbImage,
-};
+use image::{imageops, imageops::FilterType, DynamicImage, GrayImage, ImageBuffer, Luma, Rgb, RgbImage};
 use ndarray::{Array, ArrayBase, Dim, Ix, OwnedRepr};
 use opencv::core::{Mat_, Vector};
 use opencv::objdetect::CascadeClassifier;
@@ -16,12 +14,13 @@ use ort::{
     value::TensorRef,
 };
 use std::path::Path;
+use crate::face_parsing::face_parsing::{FaceParsing, FaceRawData};
 
 const FACE_SIZE: u32 = 512;
 
 pub struct FaceEnhancer {
     gfpgan: Session,
-    face_parser: Session,
+    face_parser: FaceParsing,
     face_detector: CascadeClassifier,
 }
 
@@ -111,10 +110,7 @@ impl FaceEnhancer {
             .with_intra_threads(4)?
             .commit_from_file(model_path)?;
 
-        let face_parser = Session::builder()?
-            .with_optimization_level(GraphOptimizationLevel::Level3)?
-            .with_intra_threads(4)?
-            .commit_from_file(parsing_model_path)?;
+        let face_parser = FaceParsing::new(parsing_model_path.into())?;
 
         // 初始化OpenCV人脸检测器
         let face_detector = CascadeClassifier::new(cascade_path).context("无法加载人脸检测模型")?;
@@ -214,42 +210,18 @@ impl FaceEnhancer {
 
     /// 生成人脸mask
     fn generate_face_mask(&mut self, face_img: &DynamicImage) -> Result<GrayImage> {
-        // 预处理（与人脸解析模型匹配）
-        let input_tensor = preprocess_parser(&face_img); // 需要单独的预处理函数
-        let input_tensor = TensorRef::from_array_view(input_tensor.view())?;
+        let face_raw_data = self.face_parser.parse(face_img)?;
+        let mask = generate_dynamic_mask(&face_raw_data, &FaceThresholds::default())?;
 
-        // 推理
-        let outputs = self
-            .face_parser
-            .run(ort::inputs!["input" => input_tensor])?;
+        let (height, width) = (mask.nrows(), mask.ncols());
+        let mut img = GrayImage::new(width as u32, height as u32);
 
-        let mask_array = outputs["output"]
-            .try_extract_tensor::<f32>()
-            .context("无法提取mask张量")?;
+        mask.indexed_iter().for_each(|((y, x), &is_face)| {
+            let alpha: u8 = if is_face { 255 } else { 0 };
+            img.put_pixel(x as u32, y as u32, Luma([alpha]));
+        });
 
-        // 后处理
-        let mut mask = GrayImage::new(FACE_SIZE, FACE_SIZE);
-        for y in 0..FACE_SIZE {
-            for x in 0..FACE_SIZE {
-                // 假设模型输出多通道分割结果：
-                // 通道0: 背景, 通道1: 皮肤, 通道2: 眉毛, 通道3: 眼睛等...
-                let is_face =
-                    mask_array[[0, 1, y as usize, x as usize]] > 0.5 || // 皮肤
-                        mask_array[[0, 2, y as usize, x as usize]] > 0.5 || // 鼻子
-                        mask_array[[0, 4, y as usize, x as usize]] > 0.5 || // 左眼
-                        mask_array[[0, 5, y as usize, x as usize]] > 0.5 || // 右眼
-                        mask_array[[0, 6, y as usize, x as usize]] > 0.5 || // 左眉毛
-                        mask_array[[0, 7, y as usize, x as usize]] > 0.5 || // 右眉毛
-                        mask_array[[0, 10, y as usize, x as usize]] > 0.5 || // 嘴部
-                        mask_array[[0, 11, y as usize, x as usize]] > 0.5 || // 上嘴唇
-                        mask_array[[0, 12, y as usize, x as usize]] > 0.5;   // 下嘴唇
-                let value = if is_face { 255 } else { 0 };
-                mask.put_pixel(x, y, Luma([value]));
-            }
-        }
-        mask.save("mask.png").unwrap();
-
-        Ok(mask)
+        Ok(img)
     }
 
     /// 融合处理结果到原图
@@ -293,15 +265,57 @@ impl FaceEnhancer {
     }
 }
 
-/// 人脸解析模型的专用预处理
-fn preprocess_parser(img: &DynamicImage) -> ArrayBase<OwnedRepr<f32>, Dim<[Ix; 4]>> {
-    let mut array = Array::zeros((1, 3, FACE_SIZE as usize, FACE_SIZE as usize));
+/// 阈值配置结构体
+#[derive(Debug, Clone)]
+pub struct FaceThresholds {
+    pub skin: f32,
+    pub nose: f32,
+    pub eyes: f32,
+    pub eyebrows: f32,
+    pub mouth: f32,
+    pub lips: f32,
+    pub ears: f32,
+    pub neck: f32,
+    // 其他通道可根据需要扩展...
+}
 
-    // 假设模型需要归一化到[0,1]的RGB输入
-    for (x, y, pixel) in img.to_rgb8().enumerate_pixels() {
-        array[[0, 0, y as usize, x as usize]] = pixel[0] as f32 / 255.0; // R
-        array[[0, 1, y as usize, x as usize]] = pixel[1] as f32 / 255.0; // G
-        array[[0, 2, y as usize, x as usize]] = pixel[2] as f32 / 255.0; // B
+impl Default for FaceThresholds {
+    fn default() -> Self {
+        Self {
+            skin: 0.5,
+            nose: 0.4,
+            eyes: 0.3,
+            eyebrows: 0.3,
+            mouth: 0.4,
+            lips: 0.4,
+            ears: 0.4,
+            neck: 0.5,
+        }
     }
-    array
+}
+
+/// 动态生成组合掩码的工具方法
+pub fn generate_dynamic_mask(
+    data: &FaceRawData,
+    thresholds: &FaceThresholds,
+) -> Result<ndarray::Array2<bool>> {
+    let shape = data.tensor.shape();
+    let (height, width) = (shape[2], shape[3]);
+    let mut mask = ndarray::Array2::<bool>::default((height, width));
+
+    // 并行遍历每个像素
+    ndarray::Zip::indexed(&mut mask).for_each(|(y, x), value| {
+        let skin = data.tensor[[0, 1, y, x]] > thresholds.skin;
+        let nose = data.tensor[[0, 2, y, x]] > thresholds.nose;
+        let l_eye = data.tensor[[0, 4, y, x]] > thresholds.eyes;
+        let r_eye = data.tensor[[0, 5, y, x]] > thresholds.eyes;
+        let l_brow = data.tensor[[0, 6, y, x]] > thresholds.eyebrows;
+        let r_brow = data.tensor[[0, 7, y, x]] > thresholds.eyebrows;
+        let mouth = data.tensor[[0, 10, y, x]] > thresholds.mouth;
+        let neck = data.tensor[[0, 17, y, x]] > thresholds.neck;
+
+        *value = skin || nose || l_eye || r_eye || l_brow || r_brow || mouth || neck;
+    });
+
+    Ok(mask)
 }

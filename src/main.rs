@@ -5,6 +5,8 @@ use ort::execution_providers::CoreMLExecutionProvider;
 use std::path::Path;
 
 mod frame;
+mod face_parsing;
+mod utils;
 
 fn main() -> Result<()> {
     // 初始化ONNX Runtime
