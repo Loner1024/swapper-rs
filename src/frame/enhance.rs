@@ -83,25 +83,21 @@ impl ProcessFrame for FaceEnhancer {
         let faces = self.detect_and_align_faces(&original_img)?;
 
         // 处理每个人脸
-        let mut count = 1;
         let mut final_img = original_img.to_rgb8();
         for (face_img, (x, y, w, h)) in faces {
             // 分块增强
             let restored = self.enhance_faces(&face_img)?;
-
             // 生成人脸mask
             let mask = self.generate_face_mask(&face_img)?;
-
             // 调整增强后的图像到实际尺寸
             let restored_resized = restored.resize_exact(w, h, FilterType::Lanczos3);
 
             // 调整掩码尺寸
-            let mask_resized = image::imageops::resize(&mask, w, h, FilterType::Lanczos3);
+            let mask_resized = imageops::resize(&mask, w, h, FilterType::Lanczos3);
 
             // 融合到原图
             self.blend_face(&mut final_img, &restored_resized, &mask_resized, x, y);
 
-            count += 1;
         }
         Ok(final_img)
     }
@@ -112,11 +108,12 @@ impl FaceEnhancer {
         // 初始化ONNX模型
         let gfpgan = Session::builder()?
             .with_optimization_level(GraphOptimizationLevel::Level3)?
-            .with_intra_threads(1)?
+            .with_intra_threads(4)?
             .commit_from_file(model_path)?;
 
         let face_parser = Session::builder()?
             .with_optimization_level(GraphOptimizationLevel::Level3)?
+            .with_intra_threads(4)?
             .commit_from_file(parsing_model_path)?;
 
         // 初始化OpenCV人脸检测器
@@ -236,13 +233,21 @@ impl FaceEnhancer {
             for x in 0..FACE_SIZE {
                 // 假设模型输出多通道分割结果：
                 // 通道0: 背景, 通道1: 皮肤, 通道2: 眉毛, 通道3: 眼睛等...
-                let is_face = mask_array[[0, 1, y as usize, x as usize]] > 0.5 || // 皮肤
-                    mask_array[[0, 2, y as usize, x as usize]] > 0.3 || // 眉毛
-                    mask_array[[0, 3, y as usize, x as usize]] > 0.3; // 眼睛
+                let is_face =
+                    mask_array[[0, 1, y as usize, x as usize]] > 0.5 || // 皮肤
+                        mask_array[[0, 2, y as usize, x as usize]] > 0.5 || // 鼻子
+                        mask_array[[0, 4, y as usize, x as usize]] > 0.5 || // 左眼
+                        mask_array[[0, 5, y as usize, x as usize]] > 0.5 || // 右眼
+                        mask_array[[0, 6, y as usize, x as usize]] > 0.5 || // 左眉毛
+                        mask_array[[0, 7, y as usize, x as usize]] > 0.5 || // 右眉毛
+                        mask_array[[0, 10, y as usize, x as usize]] > 0.5 || // 嘴部
+                        mask_array[[0, 11, y as usize, x as usize]] > 0.5 || // 上嘴唇
+                        mask_array[[0, 12, y as usize, x as usize]] > 0.5;   // 下嘴唇
                 let value = if is_face { 255 } else { 0 };
                 mask.put_pixel(x, y, Luma([value]));
             }
         }
+        mask.save("mask.png").unwrap();
 
         Ok(mask)
     }
