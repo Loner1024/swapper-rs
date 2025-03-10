@@ -3,7 +3,7 @@ use ort::session::builder::GraphOptimizationLevel;
 use ort::session::Session;
 use anyhow::{Context, Result};
 use image::DynamicImage;
-use ndarray::{ArrayD, ArrayView2, ArrayViewD};
+use ndarray::ArrayD;
 use ort::value::TensorRef;
 
 /// 模型输出通道元数据

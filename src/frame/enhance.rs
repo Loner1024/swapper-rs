@@ -1,14 +1,8 @@
 use crate::frame::ProcessFrame;
 use anyhow::{Context, Result};
 use image::{imageops, imageops::FilterType, DynamicImage, GrayImage, ImageBuffer, Luma, Rgb, RgbImage};
-use ndarray::{Array, ArrayBase, Dim, Ix, OwnedRepr};
-use opencv::core::{Mat_, Vector};
-use opencv::objdetect::CascadeClassifier;
-use opencv::{
-    core::{Mat, Point, Rect, Size},
-    objdetect,
-    prelude::*,
-};
+use ndarray::{Array, Dim};
+
 use ort::{
     session::{builder::GraphOptimizationLevel, Session},
     value::TensorRef,
@@ -16,8 +10,6 @@ use ort::{
 use std::path::Path;
 use crate::face_detect::face_detect::FaceDetector;
 use crate::face_parsing::face_parsing::{FaceParsing, FaceRawData};
-
-const FACE_SIZE: u32 = 512;
 
 pub struct FaceEnhancer {
     gfpgan: Session,
