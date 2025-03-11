@@ -81,6 +81,7 @@ impl ProcessFrame for FaceEnhancer {
         for (face_img, (x, y, w, h)) in faces {
             // 分块增强
             let restored = self.enhance_faces(&face_img)?;
+            face_img.save("face_img.png").unwrap();
             // 生成人脸mask
             let mask = self.generate_face_mask(&face_img)?;
             // 调整增强后的图像到实际尺寸
@@ -98,7 +99,6 @@ impl ProcessFrame for FaceEnhancer {
 
 impl FaceEnhancer {
     pub fn new(model_path: &Path, parsing_model_path: &Path, cascade_path: &str) -> Result<Self> {
-        // 初始化ONNX模型
         let gfpgan = Session::builder()?
             .with_optimization_level(GraphOptimizationLevel::Level3)?
             .with_intra_threads(4)?
@@ -179,8 +179,8 @@ impl FaceEnhancer {
         for fy in 0..height {
             for fx in 0..width {
                 let alpha = mask.get_pixel(fx, fy)[0] as f32 / 255.0;
-                let bg_x = x as u32 + fx;
-                let bg_y = y as u32 + fy;
+                let bg_x = x + fx;
+                let bg_y = y + fy;
 
                 // 边界检查
                 if bg_x >= background.width() || bg_y >= background.height() {

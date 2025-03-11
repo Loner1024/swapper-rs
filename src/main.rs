@@ -10,8 +10,8 @@ fn main() -> Result<()> {
         .with_execution_providers([CoreMLExecutionProvider::default().build()])
         .commit()?;
 
-    let input_path = "input.png";
-    let output_path = "output.png";
+    let input_path = "output.png";
+    let output_path = "output_opt.png";
     // 加载原始图像
     let original_img = image::open(input_path).context("无法打开输入图片")?;
 
@@ -19,7 +19,7 @@ fn main() -> Result<()> {
     let mut restorer = FaceEnhancer::new(
         Path::new("./models/GFPGANv1.4.onnx"),
         Path::new("./models/face_parsing.onnx"),
-        "./haarcascade_frontalface_alt.xml",
+        "./models/opencv/haarcascade_frontalface_alt2.xml",
     )?;
     // 处理图像
     restorer.process_image(&original_img)?.save(output_path)?;

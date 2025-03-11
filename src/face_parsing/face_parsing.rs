@@ -5,6 +5,7 @@ use ort::session::builder::GraphOptimizationLevel;
 use ort::session::Session;
 use ort::value::TensorRef;
 use std::path::PathBuf;
+use imageproc::point::Point;
 
 /// 模型输出通道元数据
 #[derive(Debug, Clone)]
@@ -17,10 +18,20 @@ pub struct FaceChannelMeta {
 /// 原始人脸解析数据容器
 pub struct FaceRawData {
     /// 原始 4D 张量 [batch=0, channels, height, width]
-    pub(crate) tensor: ArrayD<f32>,
+    pub tensor: ArrayD<f32>,
 
+    #[allow(unused)]
     /// 通道元数据列表（按模型输出顺序）
     channels: Vec<FaceChannelMeta>,
+}
+
+/// 对齐关键点
+#[derive(Debug, Clone)]
+pub struct FaceLandmarks {
+    pub left_eye: Point<f32>,
+    pub right_eye: Point<f32>,
+    pub nose: Point<f32>,
+    pub mouth: Point<f32>,
 }
 
 impl FaceRawData {
@@ -134,24 +145,8 @@ impl FaceRawData {
             ],
         })
     }
-
-    /// 获取单个通道的 2D 概率图 (H x W)
-    // pub fn get_channel(&self, index: usize) -> Result<&ndarray::ArrayD<f32>> {
-    //     let channel = self.channels.get(index)
-    //         .with_context(|| format!("Invalid channel index: {}", index))?;
-    //
-    //     self.tensor
-    //         .index_axis_move(Axis(1), channel.index)
-    //         .into_dimensionality::<Ix4>()
-    //         .map(|arr| arr.index_axis(Axis(0), 0))
-    //         .map_err(|e| anyhow::anyhow!("Failed to extract channel {}: {}", channel.name, e))
-    // }
-
-    /// 获取通道元数据列表
-    pub fn channels(&self) -> &[FaceChannelMeta] {
-        &self.channels
-    }
 }
+
 
 pub struct FaceParsing {
     model: Session,

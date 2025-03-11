@@ -46,7 +46,7 @@ impl FaceDetector {
             &ocv_mat,
             &mut faces,
             1.05, // scale factor
-            3,    // min neighbors
+            8,    // min neighbors
             objdetect::CASCADE_SCALE_IMAGE,
             Size::new(30, 30), // min size
             Size::new(0, 0),   // max size (0表示无限制)
