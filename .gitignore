@@ -5,3 +5,5 @@ output.png
 /env
 /models/*
 .DS_Store
+source.png
+target.png
