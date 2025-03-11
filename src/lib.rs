@@ -4,3 +4,4 @@ pub mod frame;
 pub mod utils;
 pub mod face_align;
 pub mod face_recognition;
+pub mod face_swap;
