@@ -1,8 +1,8 @@
 use anyhow::{anyhow, Result};
-use image::{DynamicImage, ImageBuffer, Rgb, RgbImage};
+use image::{DynamicImage, ImageBuffer, Rgb, RgbImage, Rgba};
 use imageproc::geometric_transformations::{rotate_about_center, Interpolation};
 use ndarray::{Array3, Array4, ArrayView3, Axis};
-use crate::face_parsing::face_parsing::FaceRawData;
+use crate::face_processor::face_parsing::FaceRawData;
 
 /// 对模型输出的 logits（shape: [1, 19, 512, 512]）在通道维度上做 argmax，得到分割 mask（shape: [1, 512, 512]）
 fn argmax_segmentation(seg_logits: &Array4<f32>) -> Array3<i64> {
@@ -116,12 +116,12 @@ pub fn align_and_normalize_face(img: &DynamicImage, face_raw_data: FaceRawData) 
         angle += 180.0;
     }
     // 为对齐人脸，将图像旋转相反角度
-    let img_rgb = img.to_rgb8();
+    let img_rgb = img.to_rgba8();
     let aligned_img = rotate_about_center(
         &img_rgb,
         -angle.to_radians(),
         Interpolation::Bilinear,
-        Rgb([0, 0, 0]),
+        Rgba([0, 0, 0, 0]),
     );
-    Ok((aligned_img.into(), angle))
+    Ok((aligned_img.into(), angle.to_radians()))
 }

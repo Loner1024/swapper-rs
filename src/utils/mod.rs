@@ -1,3 +1,5 @@
+use ndarray::ArrayView1;
+
 pub mod process_img;
 
 pub mod log {
@@ -9,3 +11,13 @@ pub mod log {
         }
     }
 }
+
+
+#[allow(unused)]
+pub fn cosine_similarity(a: ArrayView1<f32>, b: ArrayView1<f32>) -> f32 {
+    let dot_product = a.dot(&b);
+    let norm_a = a.mapv(|x| x * x).sum().sqrt();
+    let norm_b = b.mapv(|x| x * x).sum().sqrt();
+    dot_product / (norm_a * norm_b)
+}
+

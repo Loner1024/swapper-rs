@@ -10,3 +10,5 @@ ort = {git = "https://github.com/pykeio/ort.git" }
 ndarray = { version = "0.16.1", default-features = false }
 opencv = { version = "0.94.2", features = ["clang-runtime"] }
 imageproc = "0.25.0"
+num-traits = "0.2.19"
+palette = "0.7.6"

@@ -1,22 +1,19 @@
 use crate::frame::ProcessFrame;
 use anyhow::{Context, Result};
 use image::{
-    imageops, imageops::FilterType, DynamicImage, GrayImage, ImageBuffer, Luma, Rgb, RgbImage,
+    imageops, imageops::FilterType, DynamicImage, GrayImage, ImageBuffer, Rgb, RgbImage,
 };
 use ndarray::{Array, Dim};
 
-use crate::face_detect::face_detect::FaceDetector;
-use crate::face_parsing::face_parsing::{FaceParsing, FaceRawData};
 use ort::{
     session::{builder::GraphOptimizationLevel, Session},
     value::TensorRef,
 };
 use std::path::Path;
+use crate::face_processor::face_parsing::{FaceParsing, FaceRawData};
 
 pub struct FaceEnhancer {
-    gfpgan: Session,
-    face_parser: FaceParsing,
-    face_detector: FaceDetector,
+    model: Session,
 }
 
 fn preprocess_image(img: &DynamicImage) -> Result<(Array<f32, Dim<[usize; 4]>>, (u32, u32))> {
@@ -72,47 +69,21 @@ fn postprocess_output(
 }
 
 impl ProcessFrame for FaceEnhancer {
-    fn process_image(&mut self, original_img: &DynamicImage) -> Result<RgbImage> {
-        // 人脸检测和对齐
-        let faces = self.detect_and_align_faces(&original_img)?;
-
-        // 处理每个人脸
-        let mut final_img = original_img.to_rgb8();
-        for (face_img, (x, y, w, h)) in faces {
-            // 分块增强
-            let restored = self.enhance_faces(&face_img)?;
-            face_img.save("face_img.png").unwrap();
-            // 生成人脸mask
-            let mask = self.generate_face_mask(&face_img)?;
-            // 调整增强后的图像到实际尺寸
-            let restored_resized = restored.resize_exact(w, h, FilterType::Lanczos3);
-
-            // 调整掩码尺寸
-            let mask_resized = imageops::resize(&mask, w, h, FilterType::Lanczos3);
-
-            // 融合到原图
-            self.blend_face(&mut final_img, &restored_resized, &mask_resized, x, y);
-        }
-        Ok(final_img)
+    fn process_image(&mut self, face_img: &DynamicImage) -> Result<DynamicImage> {
+        let restored = self.enhance_faces(&face_img)?;
+        Ok(restored)
     }
 }
 
 impl FaceEnhancer {
-    pub fn new(model_path: &Path, parsing_model_path: &Path, cascade_path: &str) -> Result<Self> {
-        let gfpgan = Session::builder()?
+    pub fn new(model_path: &Path) -> Result<Self> {
+        let  model = Session::builder()?
             .with_optimization_level(GraphOptimizationLevel::Level3)?
             .with_intra_threads(4)?
             .commit_from_file(model_path)?;
 
-        let face_parser = FaceParsing::new(parsing_model_path.into())?;
-        let face_detector = FaceDetector::new(cascade_path)?;
-
-        // 初始化OpenCV人脸检测器
-
         Ok(Self {
-            gfpgan,
-            face_parser,
-            face_detector,
+            model,
         })
     }
 
@@ -123,7 +94,7 @@ impl FaceEnhancer {
         let input_tensor = TensorRef::from_array_view(input_array.view())?;
 
         // 执行推理
-        let outputs = self.gfpgan.run(ort::inputs!["input" => input_tensor])?;
+        let outputs = self.model.run(ort::inputs!["input" => input_tensor])?;
 
         let mut processed_image = img.clone();
         // 后处理输出
@@ -131,74 +102,52 @@ impl FaceEnhancer {
             let output_array = output_tensor
                 .try_extract_tensor::<f32>()
                 .context("Failed to extract output tensor")?;
-
             processed_image = postprocess_output(output_array.view().into_dyn(), original_size)?;
         }
         Ok(processed_image)
     }
 
-    fn detect_and_align_faces(
-        &mut self,
-        img: &DynamicImage,
-    ) -> Result<Vec<(DynamicImage, (u32, u32, u32, u32))>> {
-        self.face_detector.detect(img)
-    }
 
-    /// 生成人脸mask
-    fn generate_face_mask(&mut self, face_img: &DynamicImage) -> Result<GrayImage> {
-        let face_raw_data = self.face_parser.parse(face_img)?;
-        let mask = generate_dynamic_mask(&face_raw_data, &FaceThresholds::default())?;
 
-        let (height, width) = (mask.nrows(), mask.ncols());
-        let mut img = GrayImage::new(width as u32, height as u32);
-
-        mask.indexed_iter().for_each(|((y, x), &is_face)| {
-            let alpha: u8 = if is_face { 255 } else { 0 };
-            img.put_pixel(x as u32, y as u32, Luma([alpha]));
-        });
-
-        Ok(img)
-    }
-
-    /// 融合处理结果到原图
-    fn blend_face(
-        &self,
-        background: &mut RgbImage,
-        face: &DynamicImage,
-        mask: &GrayImage,
-        x: u32,
-        y: u32,
-    ) {
-        let face_rgb = face.to_rgb8();
-        let (width, height) = (face_rgb.width(), face_rgb.height());
-
-        // 确保掩码尺寸匹配
-        assert_eq!(mask.width(), width, "掩码宽度不匹配");
-        assert_eq!(mask.height(), height, "掩码高度不匹配");
-
-        for fy in 0..height {
-            for fx in 0..width {
-                let alpha = mask.get_pixel(fx, fy)[0] as f32 / 255.0;
-                let bg_x = x + fx;
-                let bg_y = y + fy;
-
-                // 边界检查
-                if bg_x >= background.width() || bg_y >= background.height() {
-                    continue;
-                }
-
-                let face_pixel = face_rgb.get_pixel(fx, fy);
-                let bg_pixel = background.get_pixel_mut(bg_x, bg_y);
-
-                // 线性混合
-                bg_pixel.0 = [
-                    (face_pixel[0] as f32 * alpha + bg_pixel[0] as f32 * (1.0 - alpha)) as u8,
-                    (face_pixel[1] as f32 * alpha + bg_pixel[1] as f32 * (1.0 - alpha)) as u8,
-                    (face_pixel[2] as f32 * alpha + bg_pixel[2] as f32 * (1.0 - alpha)) as u8,
-                ];
-            }
-        }
-    }
+    // /// 融合处理结果到原图
+    // fn blend_face(
+    //     &self,
+    //     background: &mut RgbImage,
+    //     face: &DynamicImage,
+    //     mask: &GrayImage,
+    //     x: u32,
+    //     y: u32,
+    // ) {
+    //     let face_rgb = face.to_rgb8();
+    //     let (width, height) = (face_rgb.width(), face_rgb.height());
+    //
+    //     // 确保掩码尺寸匹配
+    //     assert_eq!(mask.width(), width, "掩码宽度不匹配");
+    //     assert_eq!(mask.height(), height, "掩码高度不匹配");
+    //
+    //     for fy in 0..height {
+    //         for fx in 0..width {
+    //             let alpha = mask.get_pixel(fx, fy)[0] as f32 / 255.0;
+    //             let bg_x = x + fx;
+    //             let bg_y = y + fy;
+    //
+    //             // 边界检查
+    //             if bg_x >= background.width() || bg_y >= background.height() {
+    //                 continue;
+    //             }
+    //
+    //             let face_pixel = face_rgb.get_pixel(fx, fy);
+    //             let bg_pixel = background.get_pixel_mut(bg_x, bg_y);
+    //
+    //             // 线性混合
+    //             bg_pixel.0 = [
+    //                 (face_pixel[0] as f32 * alpha + bg_pixel[0] as f32 * (1.0 - alpha)) as u8,
+    //                 (face_pixel[1] as f32 * alpha + bg_pixel[1] as f32 * (1.0 - alpha)) as u8,
+    //                 (face_pixel[2] as f32 * alpha + bg_pixel[2] as f32 * (1.0 - alpha)) as u8,
+    //             ];
+    //         }
+    //     }
+    // }
 }
 
 /// 阈值配置结构体
@@ -219,12 +168,12 @@ impl Default for FaceThresholds {
     fn default() -> Self {
         Self {
             skin: 0.5,
-            nose: 0.4,
-            eyes: 0.3,
-            eyebrows: 0.3,
-            mouth: 0.4,
-            lips: 0.4,
-            ears: 0.4,
+            nose: 0.5,
+            eyes: 0.5,
+            eyebrows: 0.5,
+            mouth: 0.5,
+            lips: 0.5,
+            ears: 0.5,
             neck: 0.5,
         }
     }
@@ -248,9 +197,8 @@ pub fn generate_dynamic_mask(
         let l_brow = data.tensor[[0, 6, y, x]] > thresholds.eyebrows;
         let r_brow = data.tensor[[0, 7, y, x]] > thresholds.eyebrows;
         let mouth = data.tensor[[0, 10, y, x]] > thresholds.mouth;
-        let neck = data.tensor[[0, 17, y, x]] > thresholds.neck;
 
-        *value = skin || nose || l_eye || r_eye || l_brow || r_brow || mouth || neck;
+        *value = skin || nose || l_eye || r_eye || l_brow || r_brow || mouth;
     });
 
     Ok(mask)

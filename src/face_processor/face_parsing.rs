@@ -16,6 +16,7 @@ pub struct FaceChannelMeta {
 }
 
 /// 原始人脸解析数据容器
+#[derive(Debug)]
 pub struct FaceRawData {
     /// 原始 4D 张量 [batch=0, channels, height, width]
     pub tensor: ArrayD<f32>,

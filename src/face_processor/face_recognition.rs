@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use ort::session::Session;
 use anyhow::Result;
 use image::DynamicImage;
