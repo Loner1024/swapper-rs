@@ -1,9 +1,8 @@
 use std::marker::PhantomData;
 use anyhow::{anyhow, Context, Result};
-use image::{imageops, DynamicImage, GrayImage, ImageBuffer, Luma, Rgb, RgbImage};
+use image::{imageops, DynamicImage, GrayImage, ImageBuffer, Rgb, RgbImage};
 use image::imageops::FilterType;
 use imageproc::drawing::Canvas;
-use imageproc::geometric_transformations::{rotate_about_center, Interpolation};
 use ndarray::{array, Array1, Array2, ArrayViewD};
 use ort::session::Session;
 use ort::session::builder::GraphOptimizationLevel;
@@ -32,7 +31,7 @@ impl FaceSwapper {
         &mut self,
         target_img: &mut DynamicImage,
         source_face_recognition: Array2<f32>,
-    ) -> Result<DynamicImage> {
+    ) -> Result<(DynamicImage, GrayImage)> {
         log!("执行人脸交换");
         // 准备网络输入
         let source_tensor = Tensor::from_array(source_face_recognition)
@@ -53,9 +52,11 @@ impl FaceSwapper {
         let mask = outputs.get("mask").context("未找到换脸 mask 输出")?;
 
         let output_tensor = output.try_extract_tensor::<f32>()?;
-        let _mask_tensor = mask.try_extract_tensor::<f32>()?;
+        let mask_tensor = mask.try_extract_tensor::<f32>()?;
 
-        postprocess_output(output_tensor, target_img, (target_img.height(), target_img.width()))
+        let out_image = postprocess_output(output_tensor, target_img, (target_img.height(), target_img.width()))?;
+        let mask_image = grayscale_tensor_as_image(mask_tensor, (target_img.height(), target_img.width()))?;
+        Ok((out_image, mask_image))
     }
 }
 
@@ -221,7 +222,6 @@ fn lab_to_rgb_image(lab_pixels: Vec<Lab>, size: (u32, u32)) -> Result<RgbImage> 
 fn grayscale_tensor_as_image(
     tensor_data: ArrayViewD<f32>,
     original_size: (u32, u32),
-    rotation_angle: f32,
 ) -> Result<GrayImage> {
     // 检查形状是否符合预期 [1, 1, 256, 256]
     if tensor_data.shape() != &[1, 1, 256, 256] {
@@ -246,13 +246,6 @@ fn grayscale_tensor_as_image(
     // 创建灰度图像缓冲区
     let image: GrayImage = GrayImage::from_raw(256, 256, image_data)
         .ok_or(anyhow!("Failed to create grayscale image buffer"))?;
-    // resize
     let resized = imageops::resize(&image, original_size.0, original_size.1, FilterType::Lanczos3);
-    let aligned_img = rotate_about_center(
-        &resized,
-        rotation_angle.to_radians(),
-        Interpolation::Bilinear,
-        Luma([1]),
-    );
-    Ok(aligned_img)
+    Ok(resized)
 }

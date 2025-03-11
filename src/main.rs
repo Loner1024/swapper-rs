@@ -1,13 +1,12 @@
-use std::path::Path;
 use anyhow::{Context, Result};
 use ort::execution_providers::CoreMLExecutionProvider;
 use swapper_rs::face_swapper::face_swapper::FaceSwapper;
 use swapper_rs::frame::enhance::FaceEnhancer;
-use swapper_rs::frame::ProcessFrame;
 use swapper_rs::post_processor::post_processor::PostProcessor;
 use swapper_rs::pre_processor::pre_processor::PreProcessor;
 
 const FACE_SWAP_MODEL_PATH: &str = "./models/9O_865k.onnx";
+const FACE_ENHANCE_MODEL_PATH: &str = "./models/GFPGANv1.4.onnx";
 
 fn main() -> Result<()> {
     // 初始化ONNX Runtime
@@ -15,8 +14,8 @@ fn main() -> Result<()> {
         .with_execution_providers([CoreMLExecutionProvider::default().build()])
         .commit()?;
 
-    let source_path = "target.png";
-    let target_path = "source.png";
+    let source_path = "source.png";
+    let target_path = "target.png";
     // 加载原始图像
     let mut source_img = image::open(source_path).context("无法打开输入图片")?;
     let mut target_img = image::open(target_path).context("无法打开输入图片")?;
@@ -26,18 +25,16 @@ fn main() -> Result<()> {
 
     let mut face_swapper = FaceSwapper::new(FACE_SWAP_MODEL_PATH)?;
 
-    let swaped_face =  face_swapper.swap_face(&mut pre_process_result.target_face.clone(), pre_process_result.face_recognition_source.clone())?;
+    let (face, mask) =  face_swapper.swap_face(&mut pre_process_result.target_face.clone(), pre_process_result.face_recognition_source.clone())?;
 
     // 初始化人脸修复器
-    let mut restorer = FaceEnhancer::new(
-        Path::new("./models/GFPGANv1.4.onnx"),
-    )?;
+    let mut restorer = FaceEnhancer::new(FACE_ENHANCE_MODEL_PATH)?;
     // 处理图像
     let output_path = "result.png";
-    let swaped_face = restorer.process_image(&swaped_face)?;
+    let swaped_face = restorer.enhance_faces(&face)?;
 
     let mut post_processor = PostProcessor::new(&mut pre_processor.parsing_session, pre_process_result.clone());
-    post_processor.process(&target_img, &swaped_face)?.save(output_path)?;
+    post_processor.process(&target_img, &swaped_face, &mask)?.save(output_path)?;
 
     Ok(())
 }

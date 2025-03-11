@@ -1,4 +1,4 @@
-use image::{DynamicImage, RgbImage};
+use image::DynamicImage;
 
 pub mod enhance;
 pub trait ProcessFrame {

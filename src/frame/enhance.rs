@@ -1,7 +1,7 @@
 use crate::frame::ProcessFrame;
 use anyhow::{Context, Result};
 use image::{
-    imageops, imageops::FilterType, DynamicImage, GrayImage, ImageBuffer, Rgb, RgbImage,
+    imageops, imageops::FilterType, DynamicImage, ImageBuffer, Rgb, RgbImage,
 };
 use ndarray::{Array, Dim};
 
@@ -9,8 +9,7 @@ use ort::{
     session::{builder::GraphOptimizationLevel, Session},
     value::TensorRef,
 };
-use std::path::Path;
-use crate::face_processor::face_parsing::{FaceParsing, FaceRawData};
+use crate::face_processor::face_parsing::FaceRawData;
 
 pub struct FaceEnhancer {
     model: Session,
@@ -76,7 +75,7 @@ impl ProcessFrame for FaceEnhancer {
 }
 
 impl FaceEnhancer {
-    pub fn new(model_path: &Path) -> Result<Self> {
+    pub fn new(model_path: &str) -> Result<Self> {
         let  model = Session::builder()?
             .with_optimization_level(GraphOptimizationLevel::Level3)?
             .with_intra_threads(4)?
