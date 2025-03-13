@@ -1,15 +1,15 @@
-use std::marker::PhantomData;
-use anyhow::{anyhow, Context, Result};
-use image::{imageops, DynamicImage, GrayImage, ImageBuffer, Rgb, RgbImage};
-use image::imageops::FilterType;
-use imageproc::drawing::Canvas;
-use ndarray::{array, Array1, Array2, ArrayViewD};
-use ort::session::Session;
-use ort::session::builder::GraphOptimizationLevel;
-use ort::value::{Tensor, TensorRef};
-use palette::{FromColor, Lab, Srgb};
 use crate::log;
 use crate::utils::process_img::preprocess_image;
+use anyhow::{anyhow, Context, Result};
+use image::imageops::FilterType;
+use image::{imageops, DynamicImage, GrayImage, ImageBuffer, Rgb, RgbImage};
+use imageproc::drawing::Canvas;
+use ndarray::{array, Array1, Array2, ArrayViewD};
+use ort::session::builder::GraphOptimizationLevel;
+use ort::session::Session;
+use ort::value::{Tensor, TensorRef};
+use palette::{FromColor, Lab, Srgb};
+use std::marker::PhantomData;
 
 pub struct FaceSwapper {
     model: Session,
@@ -21,9 +21,7 @@ impl FaceSwapper {
             .with_optimization_level(GraphOptimizationLevel::Level3)?
             .with_intra_threads(1)?
             .commit_from_file(model_path)?;
-        Ok(Self {
-            model,
-        })
+        Ok(Self { model })
     }
 
     // 人脸交换
@@ -34,8 +32,7 @@ impl FaceSwapper {
     ) -> Result<(DynamicImage, GrayImage)> {
         log!("执行人脸交换");
         // 准备网络输入
-        let source_tensor = Tensor::from_array(source_face_recognition)
-            .context("张量转换失败")?;
+        let source_tensor = Tensor::from_array(source_face_recognition).context("张量转换失败")?;
         let target_image_data = preprocess_image(&target_img, (256, 256))?;
         let target_tensor: TensorRef<f32> = TensorRef::from_array_view(target_image_data.view())?;
 
@@ -54,8 +51,13 @@ impl FaceSwapper {
         let output_tensor = output.try_extract_tensor::<f32>()?;
         let mask_tensor = mask.try_extract_tensor::<f32>()?;
 
-        let out_image = postprocess_output(output_tensor, target_img, (target_img.height(), target_img.width()))?;
-        let mask_image = grayscale_tensor_as_image(mask_tensor, (target_img.height(), target_img.width()))?;
+        let out_image = postprocess_output(
+            output_tensor,
+            target_img,
+            (target_img.height(), target_img.width()),
+        )?;
+        let mask_image =
+            grayscale_tensor_as_image(mask_tensor, (target_img.height(), target_img.width()))?;
         Ok((out_image, mask_image))
     }
 }
@@ -83,17 +85,27 @@ fn postprocess_output(
     // 4. 动态反归一化到 [0, 255]
     for y in 0..h {
         for x in 0..w {
-            let r = ((output[[0, 0, y, x]] - min_val) / range * 255.0).round().clamp(0.0, 255.0) as u8;
-            let g = ((output[[0, 1, y, x]] - min_val) / range * 255.0).round().clamp(0.0, 255.0) as u8;
-            let b = ((output[[0, 2, y, x]] - min_val) / range * 255.0).round().clamp(0.0, 255.0) as u8;
+            let r = ((output[[0, 0, y, x]] - min_val) / range * 255.0)
+                .round()
+                .clamp(0.0, 255.0) as u8;
+            let g = ((output[[0, 1, y, x]] - min_val) / range * 255.0)
+                .round()
+                .clamp(0.0, 255.0) as u8;
+            let b = ((output[[0, 2, y, x]] - min_val) / range * 255.0)
+                .round()
+                .clamp(0.0, 255.0) as u8;
             img_buffer.put_pixel(x as u32, y as u32, Rgb([r, g, b]));
         }
     }
     let corrected_img = reinhard_color_transfer(&img_buffer.into(), target_image)?;
-    let resized = imageops::resize(&corrected_img, original_size.0, original_size.1, FilterType::Triangle);
+    let resized = imageops::resize(
+        &corrected_img,
+        original_size.0,
+        original_size.1,
+        FilterType::Triangle,
+    );
     Ok(DynamicImage::ImageRgb8(resized))
 }
-
 
 // Reinhard 颜色迁移核心逻辑
 pub fn reinhard_color_transfer(
@@ -119,11 +131,9 @@ pub fn reinhard_color_transfer(
 }
 
 // RGB 转 LAB 颜色空间 (使用 palette 库)
-fn convert_to_lab(
-    src: &DynamicImage,
-    target: &DynamicImage,
-) -> Result<(Vec<Lab>, Vec<Lab>)> {
-    let src_lab: Vec<Lab> = src.to_rgb32f()
+fn convert_to_lab(src: &DynamicImage, target: &DynamicImage) -> Result<(Vec<Lab>, Vec<Lab>)> {
+    let src_lab: Vec<Lab> = src
+        .to_rgb32f()
         .pixels()
         .map(|p| {
             let rgb = Srgb::new(p.0[0], p.0[1], p.0[2]).into_linear();
@@ -131,7 +141,8 @@ fn convert_to_lab(
         })
         .collect();
 
-    let target_lab: Vec<Lab> = target.to_rgb32f()
+    let target_lab: Vec<Lab> = target
+        .to_rgb32f()
         .pixels()
         .map(|p| {
             let rgb = Srgb::new(p.0[0], p.0[1], p.0[2]).into_linear();
@@ -166,9 +177,7 @@ fn compute_mean_std(data: &[f32]) -> Array1<f32> {
     let sum: f32 = data.iter().sum();
     let mean = sum / data.len() as f32;
 
-    let variance: f32 = data.iter()
-        .map(|v| (v - mean).powi(2))
-        .sum::<f32>() / data.len() as f32;
+    let variance: f32 = data.iter().map(|v| (v - mean).powi(2)).sum::<f32>() / data.len() as f32;
 
     array![mean, variance.sqrt()]
 }
@@ -180,12 +189,20 @@ fn adjust_lab_channels(
     target_stats: &[Array1<f32>; 3],
 ) -> Vec<Lab> {
     let data: PhantomData<palette::white_point::D65> = Default::default();
-    src_lab.iter().map(|lab| {
-        let l = adjust_channel(lab.l, &src_stats[0], &target_stats[0]);
-        let a = adjust_channel(lab.a, &src_stats[1], &target_stats[1]);
-        let b = adjust_channel(lab.b, &src_stats[2], &target_stats[2]);
-        Lab { l, a, b, white_point: data}
-    }).collect()
+    src_lab
+        .iter()
+        .map(|lab| {
+            let l = adjust_channel(lab.l, &src_stats[0], &target_stats[0]);
+            let a = adjust_channel(lab.a, &src_stats[1], &target_stats[1]);
+            let b = adjust_channel(lab.b, &src_stats[2], &target_stats[2]);
+            Lab {
+                l,
+                a,
+                b,
+                white_point: data,
+            }
+        })
+        .collect()
 }
 
 // 单通道调整公式
@@ -230,7 +247,7 @@ fn grayscale_tensor_as_image(
 
     // 移除批次和通道维度（从 [1,1,256,256] 转为 [256,256]）
     let tensor_slice = tensor_data
-        .index_axis_move(ndarray::Axis(0), 0)  // 移除批次维度
+        .index_axis_move(ndarray::Axis(0), 0) // 移除批次维度
         .index_axis_move(ndarray::Axis(0), 0); // 移除通道维度
 
     // 转换为灰度像素值（假设值范围是 [0,1]）
@@ -246,6 +263,11 @@ fn grayscale_tensor_as_image(
     // 创建灰度图像缓冲区
     let image: GrayImage = GrayImage::from_raw(256, 256, image_data)
         .ok_or(anyhow!("Failed to create grayscale image buffer"))?;
-    let resized = imageops::resize(&image, original_size.0, original_size.1, FilterType::Lanczos3);
+    let resized = imageops::resize(
+        &image,
+        original_size.0,
+        original_size.1,
+        FilterType::Lanczos3,
+    );
     Ok(resized)
 }

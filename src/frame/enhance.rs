@@ -1,15 +1,12 @@
 use crate::frame::ProcessFrame;
 use anyhow::{Context, Result};
-use image::{
-    imageops, imageops::FilterType, DynamicImage, ImageBuffer, Rgb, RgbImage,
-};
+use image::{imageops, imageops::FilterType, DynamicImage, ImageBuffer, Rgb, RgbImage};
 use ndarray::{Array, Dim};
 
 use ort::{
     session::{builder::GraphOptimizationLevel, Session},
     value::TensorRef,
 };
-use crate::face_processor::face_parsing::FaceRawData;
 
 pub struct FaceEnhancer {
     model: Session,
@@ -76,14 +73,12 @@ impl ProcessFrame for FaceEnhancer {
 
 impl FaceEnhancer {
     pub fn new(model_path: &str) -> Result<Self> {
-        let  model = Session::builder()?
+        let model = Session::builder()?
             .with_optimization_level(GraphOptimizationLevel::Level3)?
             .with_intra_threads(4)?
             .commit_from_file(model_path)?;
 
-        Ok(Self {
-            model,
-        })
+        Ok(Self { model })
     }
 
     pub fn enhance_faces(&mut self, img: &DynamicImage) -> Result<DynamicImage> {
@@ -105,8 +100,6 @@ impl FaceEnhancer {
         }
         Ok(processed_image)
     }
-
-
 
     // /// 融合处理结果到原图
     // fn blend_face(
@@ -160,7 +153,7 @@ pub struct FaceThresholds {
     pub lips: f32,
     pub ears: f32,
     pub neck: f32,
-    // 其他通道可根据需要扩展...
+    pub hair: f32,
 }
 
 impl Default for FaceThresholds {
@@ -174,31 +167,7 @@ impl Default for FaceThresholds {
             lips: 0.5,
             ears: 0.5,
             neck: 0.5,
+            hair: 0.5,
         }
     }
-}
-
-/// 动态生成组合掩码的工具方法
-pub fn generate_dynamic_mask(
-    data: &FaceRawData,
-    thresholds: &FaceThresholds,
-) -> Result<ndarray::Array2<bool>> {
-    let shape = data.tensor.shape();
-    let (height, width) = (shape[2], shape[3]);
-    let mut mask = ndarray::Array2::<bool>::default((height, width));
-
-    // 并行遍历每个像素
-    ndarray::Zip::indexed(&mut mask).for_each(|(y, x), value| {
-        let skin = data.tensor[[0, 1, y, x]] > thresholds.skin;
-        let nose = data.tensor[[0, 2, y, x]] > thresholds.nose;
-        let l_eye = data.tensor[[0, 4, y, x]] > thresholds.eyes;
-        let r_eye = data.tensor[[0, 5, y, x]] > thresholds.eyes;
-        let l_brow = data.tensor[[0, 6, y, x]] > thresholds.eyebrows;
-        let r_brow = data.tensor[[0, 7, y, x]] > thresholds.eyebrows;
-        let mouth = data.tensor[[0, 10, y, x]] > thresholds.mouth;
-
-        *value = skin || nose || l_eye || r_eye || l_brow || r_brow || mouth;
-    });
-
-    Ok(mask)
 }

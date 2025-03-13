@@ -1,10 +1,9 @@
-use anyhow::Result;
-use image::{imageops, DynamicImage, GrayImage, Luma, Rgba, RgbaImage};
-use image::imageops::FilterType;
-use imageproc::geometric_transformations::{rotate_about_center, Interpolation};
 use crate::face_processor::face_parsing::FaceParsing;
-use crate::frame::enhance::{generate_dynamic_mask, FaceThresholds};
 use crate::pre_processor::pre_processor::PreProcessResult;
+use anyhow::Result;
+use image::imageops::FilterType;
+use image::{imageops, DynamicImage, GrayImage, Luma, Rgba, RgbaImage};
+use imageproc::geometric_transformations::{rotate_about_center, Interpolation};
 
 pub struct PostProcessor<'a> {
     #[allow(unused)]
@@ -20,18 +19,18 @@ impl<'a> PostProcessor<'a> {
         }
     }
 
-    pub fn process(&mut self, background: &DynamicImage, face_image: &DynamicImage, mask: &GrayImage) -> Result<RgbaImage> {
+    pub fn process(
+        &mut self,
+        background: &DynamicImage,
+        face_image: &DynamicImage,
+        mask: &GrayImage,
+    ) -> Result<RgbaImage> {
         let (x1, x2, y1, y2) = self.pre_process_result.target_rect;
-        let face_image = face_image.resize(x2-x1, y2-y1, FilterType::Lanczos3);
-        let mask = imageops::resize(
-            mask,
-            x2-x1,
-            y2-y1,
-            FilterType::Lanczos3,
-        );
+        let face_image = face_image.resize(x2 - x1, y2 - y1, FilterType::Lanczos3);
+        let mask = imageops::resize(mask, x2 - x1, y2 - y1, FilterType::Lanczos3);
         // let mask = self.generate_face_mask(&face_image)?;
 
-        let (x, _, y, _)  = self.pre_process_result.target_rect;
+        let (x, _, y, _) = self.pre_process_result.target_rect;
         let mask = rotate_about_center(
             &mask,
             self.pre_process_result.target_rotation_angle,
@@ -46,29 +45,7 @@ impl<'a> PostProcessor<'a> {
         );
         blend_face(background, &face_image.into(), &mask, x, y)
     }
-
-    #[allow(unused)]
-    fn generate_face_mask(&mut self, face_img: &DynamicImage) -> Result<GrayImage> {
-        let face_raw_data = self.face_parser.parse(face_img)?;
-        let mask = generate_dynamic_mask(&face_raw_data, &FaceThresholds::default())?;
-
-        let (height, width) = (mask.nrows(), mask.ncols());
-        let mut img = GrayImage::new(width as u32, height as u32);
-
-        mask.indexed_iter().for_each(|((y, x), &is_face)| {
-            let alpha: u8 = if is_face { 255 } else { 0 };
-            img.put_pixel(x as u32, y as u32, Luma([alpha]));
-        });
-        let resized = imageops::resize(
-            &img,
-            face_img.width(),
-            face_img.height(),
-            FilterType::Lanczos3,
-        );
-        Ok(resized)
-    }
 }
-
 
 // 将交换后的人脸与目标图像混合
 fn blend_face(
@@ -112,4 +89,3 @@ fn blend_face(
 
     Ok(result)
 }
-

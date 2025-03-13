@@ -1,14 +1,14 @@
-use std::path::PathBuf;
-use ort::session::Session;
+use crate::utils::process_img::{l2_normalize, normalize_image};
 use anyhow::Result;
 use image::DynamicImage;
 use ndarray::Array2;
 use ort::session::builder::GraphOptimizationLevel;
+use ort::session::Session;
 use ort::value::TensorRef;
-use crate::utils::process_img::{l2_normalize, normalize_image};
+use std::path::PathBuf;
 
 pub struct FaceRecognition {
-    model: Session
+    model: Session,
 }
 
 impl FaceRecognition {
@@ -19,9 +19,9 @@ impl FaceRecognition {
             .commit_from_file(model_path)?;
         Ok(Self { model })
     }
-    
+
     pub fn recognition(&mut self, face_image: &DynamicImage) -> Result<Array2<f32>> {
-        let face_image = normalize_image(face_image, (112,112));
+        let face_image = normalize_image(face_image, (112, 112));
 
         // 准备输入张量 (shape: [1, 3, 112, 112])
         let input_tensor = TensorRef::from_array_view(face_image.view())?;
@@ -31,6 +31,6 @@ impl FaceRecognition {
         let face_recognition_data = outputs["output"].try_extract_tensor::<f32>()?;
         let normalized_feature = l2_normalize(face_recognition_data.into_owned());
 
-        Ok(normalized_feature.into_dimensionality()?.to_owned()) 
+        Ok(normalized_feature.into_dimensionality()?.to_owned())
     }
 }

@@ -1,8 +1,8 @@
+use crate::face_processor::face_parsing::FaceRawData;
 use anyhow::{anyhow, Result};
 use image::{DynamicImage, ImageBuffer, Rgb, RgbImage, Rgba};
 use imageproc::geometric_transformations::{rotate_about_center, Interpolation};
 use ndarray::{Array3, Array4, ArrayView3, Axis};
-use crate::face_processor::face_parsing::FaceRawData;
 
 /// 对模型输出的 logits（shape: [1, 19, 512, 512]）在通道维度上做 argmax，得到分割 mask（shape: [1, 512, 512]）
 fn argmax_segmentation(seg_logits: &Array4<f32>) -> Array3<i64> {
@@ -31,25 +31,25 @@ fn argmax_segmentation(seg_logits: &Array4<f32>) -> Array3<i64> {
 fn visualize_segmentation(seg: &ArrayView3<'_, i64>) -> RgbImage {
     // 定义每个类别的颜色（示例颜色，可根据需要调整）
     let colors = vec![
-        (0, 0, 0),         // 0 background
-        (255, 224, 189),   // 1 skin
-        (255, 0, 0),       // 2 nose
-        (0, 0, 255),       // 3 eye_g / eyeglasses
-        (0, 255, 0),       // 4 l_eye (left eye)
-        (255, 0, 255),     // 5 r_eye (right eye)
-        (255, 255, 0),     // 6 l_brow (left eyebrow)
-        (0, 255, 255),     // 7 r_brow (right eyebrow)
-        (128, 128, 128),   // 8 l_ear (left ear)
-        (64, 64, 64),      // 9 r_ear (right ear)
-        (0, 128, 0),       // 10 mouth (area between lips)
-        (128, 0, 0),       // 11 u_lip (upper lip)
-        (128, 0, 128),     // 12 l_lip (lower lip)
-        (0, 128, 128),     // 13 hair
-        (128, 128, 0),     // 14 hat
-        (255, 165, 0),     // 15 ear_r (earring)
-        (100, 100, 100),   // 16 neck_l (necklace)
-        (50, 50, 50),      // 17 neck
-        (200, 200, 200),   // 18 cloth (clothing)
+        (0, 0, 0),       // 0 background
+        (255, 224, 189), // 1 skin
+        (255, 0, 0),     // 2 nose
+        (0, 0, 255),     // 3 eye_g / eyeglasses
+        (0, 255, 0),     // 4 l_eye (left eye)
+        (255, 0, 255),   // 5 r_eye (right eye)
+        (255, 255, 0),   // 6 l_brow (left eyebrow)
+        (0, 255, 255),   // 7 r_brow (right eyebrow)
+        (128, 128, 128), // 8 l_ear (left ear)
+        (64, 64, 64),    // 9 r_ear (right ear)
+        (0, 128, 0),     // 10 mouth (area between lips)
+        (128, 0, 0),     // 11 u_lip (upper lip)
+        (128, 0, 128),   // 12 l_lip (lower lip)
+        (0, 128, 128),   // 13 hair
+        (128, 128, 0),   // 14 hat
+        (255, 165, 0),   // 15 ear_r (earring)
+        (100, 100, 100), // 16 neck_l (necklace)
+        (50, 50, 50),    // 17 neck
+        (200, 200, 200), // 18 cloth (clothing)
     ];
 
     // mask 的 shape 为 (1, height, width)
@@ -86,7 +86,10 @@ fn compute_centroid(seg: &ArrayView3<'_, i64>, target_label: i64) -> Option<(u32
     }
 }
 
-pub fn align_and_normalize_face(img: &DynamicImage, face_raw_data: FaceRawData) -> Result<(DynamicImage, f32)> {
+pub fn align_and_normalize_face(
+    img: &DynamicImage,
+    face_raw_data: FaceRawData,
+) -> Result<(DynamicImage, f32)> {
     // 输出 logits，形状为 (1, 19, 512, 512)
     // let seg_logits = outputs[0].try_extract::<Array4<f32>>()?;
     // 重塑为四维形状（需确保元素总数一致）
@@ -104,7 +107,10 @@ pub fn align_and_normalize_face(img: &DynamicImage, face_raw_data: FaceRawData) 
     let left_eye = compute_centroid(&seg_mask.view(), 4);
     let right_eye = compute_centroid(&seg_mask.view(), 5);
 
-    let (left_eye_center, right_eye_center) = (left_eye.ok_or(anyhow!("找不到左眼"))?, right_eye.ok_or(anyhow!("找不到右眼"))?);
+    let (left_eye_center, right_eye_center) = (
+        left_eye.ok_or(anyhow!("找不到左眼"))?,
+        right_eye.ok_or(anyhow!("找不到右眼"))?,
+    );
     let dx = right_eye_center.0 as f32 - left_eye_center.0 as f32;
     let dy = right_eye_center.1 as f32 - left_eye_center.1 as f32;
     let mut angle = dy.atan2(dx).to_degrees();

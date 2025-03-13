@@ -24,8 +24,10 @@ fn main() -> Result<()> {
     let pre_process_result = pre_processor.process(&mut source_img, &mut target_img)?;
 
     let mut face_swapper = FaceSwapper::new(FACE_SWAP_MODEL_PATH)?;
-
-    let (face, mask) =  face_swapper.swap_face(&mut pre_process_result.target_face.clone(), pre_process_result.face_recognition_source.clone())?;
+    let (face, mask) = face_swapper.swap_face(
+        &mut pre_process_result.target_face.clone(),
+        pre_process_result.face_recognition_source.clone(),
+    )?;
 
     // 初始化人脸修复器
     let mut restorer = FaceEnhancer::new(FACE_ENHANCE_MODEL_PATH)?;
@@ -33,8 +35,13 @@ fn main() -> Result<()> {
     let output_path = "result.png";
     let swaped_face = restorer.enhance_faces(&face)?;
 
-    let mut post_processor = PostProcessor::new(&mut pre_processor.parsing_session, pre_process_result.clone());
-    post_processor.process(&target_img, &swaped_face, &mask)?.save(output_path)?;
+    let mut post_processor = PostProcessor::new(
+        &mut pre_processor.parsing_session,
+        pre_process_result.clone(),
+    );
+    post_processor
+        .process(&target_img, &swaped_face, &mask)?
+        .save(output_path)?;
 
     Ok(())
 }

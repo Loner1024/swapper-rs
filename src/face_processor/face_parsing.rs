@@ -1,11 +1,11 @@
 use anyhow::{Context, Result};
 use image::DynamicImage;
+use imageproc::point::Point;
 use ndarray::ArrayD;
 use ort::session::builder::GraphOptimizationLevel;
 use ort::session::Session;
 use ort::value::TensorRef;
 use std::path::PathBuf;
-use imageproc::point::Point;
 
 /// 模型输出通道元数据
 #[derive(Debug, Clone)]
@@ -16,7 +16,7 @@ pub struct FaceChannelMeta {
 }
 
 /// 原始人脸解析数据容器
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FaceRawData {
     /// 原始 4D 张量 [batch=0, channels, height, width]
     pub tensor: ArrayD<f32>,
@@ -147,7 +147,6 @@ impl FaceRawData {
         })
     }
 }
-
 
 pub struct FaceParsing {
     model: Session,
