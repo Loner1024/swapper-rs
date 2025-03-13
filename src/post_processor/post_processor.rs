@@ -25,12 +25,20 @@ impl<'a> PostProcessor<'a> {
         face_image: &DynamicImage,
         mask: &GrayImage,
     ) -> Result<RgbaImage> {
-        let (x1, x2, y1, y2) = self.pre_process_result.target_rect;
-        let face_image = face_image.resize(x2 - x1, y2 - y1, FilterType::Lanczos3);
-        let mask = imageops::resize(mask, x2 - x1, y2 - y1, FilterType::Lanczos3);
-        // let mask = self.generate_face_mask(&face_image)?;
+        let (x, y, width, height) = (
+            self.pre_process_result.target_rect.x,
+            self.pre_process_result.target_rect.y,
+            self.pre_process_result.target_rect.width,
+            self.pre_process_result.target_rect.height,
+        );
+        let face_image = imageops::resize(
+            face_image,
+            width as u32,
+            height as u32,
+            FilterType::Lanczos3,
+        );
+        let mask = imageops::resize(mask, width as u32, height as u32, FilterType::Lanczos3);
 
-        let (x, _, y, _) = self.pre_process_result.target_rect;
         let mask = rotate_about_center(
             &mask,
             self.pre_process_result.target_rotation_angle,
@@ -38,12 +46,12 @@ impl<'a> PostProcessor<'a> {
             Luma([0]),
         );
         let face_image = rotate_about_center(
-            &face_image.to_rgba8(),
+            &face_image,
             self.pre_process_result.target_rotation_angle,
             Interpolation::Bilinear,
             Rgba([0, 0, 0, 0]),
         );
-        blend_face(background, &face_image.into(), &mask, x, y)
+        blend_face(background, &face_image.into(), &mask, x as u32, y as u32)
     }
 }
 

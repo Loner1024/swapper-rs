@@ -28,17 +28,22 @@ fn main() -> Result<()> {
         &mut pre_process_result.target_face.clone(),
         pre_process_result.face_recognition_source.clone(),
     )?;
+    pre_process_result.target_face.save("target_face.png")?;
+    face.save("before_enhance.png")?;
 
     // 初始化人脸修复器
     let mut restorer = FaceEnhancer::new(FACE_ENHANCE_MODEL_PATH)?;
     // 处理图像
-    let output_path = "result.png";
     let swaped_face = restorer.enhance_faces(&face)?;
+    swaped_face.save("enhance.png")?;
+    mask.save("mask.png")?;
 
     let mut post_processor = PostProcessor::new(
         &mut pre_processor.parsing_session,
         pre_process_result.clone(),
     );
+
+    let output_path = "result.png";
     post_processor
         .process(&target_img, &swaped_face, &mask)?
         .save(output_path)?;

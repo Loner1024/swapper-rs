@@ -163,7 +163,8 @@ impl FaceParsing {
 
     pub fn parse(&mut self, face_img: &DynamicImage) -> Result<FaceRawData> {
         // 预处理（与人脸解析模型匹配）
-        let input_tensor = crate::utils::process_img::preprocess_image(&face_img, (512, 512))?; // 需要单独的预处理函数
+        let (input_tensor, _) =
+            crate::utils::process_img::preprocess_image_with_padding_square(&face_img, 512)?; // 需要单独的预处理函数
         let input_tensor = TensorRef::from_array_view(input_tensor.view())?;
 
         // 推理

@@ -2,18 +2,20 @@ use crate::face_processor::face_parsing::FaceRawData;
 use crate::frame::enhance::FaceThresholds;
 use anyhow::Result;
 use image::imageops::FilterType;
-use image::{imageops, DynamicImage, GenericImage, GenericImageView, GrayImage, Luma, Rgba};
+use image::{
+    imageops, DynamicImage, GenericImage, GenericImageView, GrayImage, Luma, Rgba, RgbaImage,
+};
 use ndarray::{Array, ArrayBase, ArrayD, Dim, Ix, IxDyn, OwnedRepr};
 
 // 预处理图像为模型输入格式
-pub fn preprocess_image(
+pub fn preprocess_image_with_padding_square(
     img: &DynamicImage,
-    target_size: (u32, u32),
-) -> anyhow::Result<ArrayBase<OwnedRepr<f32>, Dim<[Ix; 4]>>> {
+    target_size: u32,
+) -> Result<(ArrayBase<OwnedRepr<f32>, Dim<[Ix; 4]>>, TransformInfo)> {
     // 调整图像大小
-    let img_resized = img.resize_exact(target_size.0, target_size.1, FilterType::Triangle);
+    let (img_resized, transform_info) = pad_to_square_with_size(img, target_size, 0.0, None);
 
-    let mut array = Array::zeros((1, 3, target_size.1 as usize, target_size.0 as usize));
+    let mut array = Array::zeros((1, 3, target_size as usize, target_size as usize));
 
     // 假设模型需要归一化到[0,1]的RGB输入
     for (x, y, pixel) in img_resized.to_rgb8().enumerate_pixels() {
@@ -22,7 +24,7 @@ pub fn preprocess_image(
         array[[0, 2, y as usize, x as usize]] = pixel[2] as f32 / 255.0; // B
     }
 
-    Ok(array)
+    Ok((array, transform_info))
 }
 
 pub fn normalize_image(img: &DynamicImage, target_size: (u32, u32)) -> ArrayD<f32> {
@@ -167,4 +169,180 @@ pub fn draw_rect(img: &mut DynamicImage, x1: u32, x2: u32, y1: u32, y2: u32) {
         img.put_pixel(x1, i, color);
         img.put_pixel(x2, i, color);
     }
+}
+
+#[derive(Copy, Clone)]
+pub struct BoxDetection {
+    pub x: f32,
+    pub y: f32,
+    pub width: f32,
+    pub height: f32,
+    pub conf: f32,
+}
+
+/// 图像变换信息结构体，存储预处理过程中的所有变换参数
+#[derive(Debug, Clone, Copy)]
+pub struct TransformInfo {
+    // 原始图像信息
+    pub orig_width: u32,
+    pub orig_height: u32,
+
+    // 裁剪信息
+    pub crop_x: u32,
+    pub crop_y: u32,
+    pub crop_width: u32,
+    pub crop_height: u32,
+
+    // 填充信息
+    pub pad_x_offset: u32,
+    pub pad_y_offset: u32,
+
+    // 缩放比例
+    pub scale: f32,
+
+    // 目标尺寸
+    pub target_size: u32,
+}
+
+impl TransformInfo {
+    /// 将YOLO检测坐标从预处理图像转换为原始图像坐标
+    ///
+    /// `detection` - YOLO的检测结果，假设格式为 (x, y, w, h, conf)
+    ///               其中x,y是中心点坐标，w,h是宽高，都是相对于目标尺寸的像素值
+    ///
+    /// 返回：原始图像上的(x1, y1, x2, y2, conf)坐标和置信度
+    pub fn convert_to_original_coordinates(&self, detection: &BoxDetection) -> BoxDetection {
+        let (x_center, y_center, width, height) =
+            (detection.x, detection.y, detection.width, detection.height);
+
+        // 1. 将YOLO输出的中心点坐标转换为左上角坐标（在填充后的图像上）
+        let padded_x1 = x_center - width / 2.0;
+        let padded_y1 = y_center - height / 2.0;
+        let padded_x2 = x_center + width / 2.0;
+        let padded_y2 = y_center + height / 2.0;
+
+        // 2. 去除填充偏移
+        let unpadded_x1 = padded_x1 - self.pad_x_offset as f32;
+        let unpadded_y1 = padded_y1 - self.pad_y_offset as f32;
+        let unpadded_x2 = padded_x2 - self.pad_x_offset as f32;
+        let unpadded_y2 = padded_y2 - self.pad_y_offset as f32;
+
+        // 3. 反向缩放到裁剪尺寸
+        let crop_x1 = unpadded_x1 / self.scale;
+        let crop_y1 = unpadded_y1 / self.scale;
+        let crop_x2 = unpadded_x2 / self.scale;
+        let crop_y2 = unpadded_y2 / self.scale;
+
+        // 4. 加上裁剪偏移，回到原始图像坐标
+        let orig_x1 = crop_x1 + self.crop_x as f32;
+        let orig_y1 = crop_y1 + self.crop_y as f32;
+        let orig_x2 = crop_x2 + self.crop_x as f32;
+        let orig_y2 = crop_y2 + self.crop_y as f32;
+
+        // 5. 确保坐标在原图范围内
+        let x1 = orig_x1.max(0.0).min(self.orig_width as f32) as u32;
+        let y1 = orig_y1.max(0.0).min(self.orig_height as f32) as u32;
+        let x2 = orig_x2.max(0.0).min(self.orig_width as f32) as u32;
+        let y2 = orig_y2.max(0.0).min(self.orig_height as f32) as u32;
+
+        BoxDetection {
+            x: x1 as f32,
+            y: y1 as f32,
+            width: (x2 - x1) as f32,
+            height: (y2 - y1) as f32,
+            conf: detection.conf,
+        }
+    }
+}
+
+/// 将图像裁剪、调整大小并填充成指定尺寸的正方形，并返回变换信息
+///
+/// `img` - 输入图像
+/// `target_size` - 目标正方形的边长
+/// `crop_margin` - 裁剪时额外保留的边缘比例（0.0-1.0），增加可以保留更多上下文
+///
+/// 返回：(填充后的图像, 变换信息结构体)
+pub fn pad_to_square_with_size(
+    img: &DynamicImage,
+    target_size: u32,
+    crop_margin: f32,
+    face_region: Option<(u32, u32, u32, u32)>, // 可选的人脸区域 (x, y, width, height)
+) -> (DynamicImage, TransformInfo) {
+    // 记录原始尺寸
+    let (orig_width, orig_height) = (img.width(), img.height());
+
+    // 1. 确定裁剪区域 - 基于人脸边界框或使用整个图像
+    let (face_x, face_y, face_width, face_height) =
+        face_region.unwrap_or((0, 0, orig_width, orig_height));
+
+    // 计算扩展后的裁剪区域
+    let crop_width = (face_width as f32 * (1.0 + crop_margin)).min(orig_width as f32) as u32;
+    let crop_height = (face_height as f32 * (1.0 + crop_margin)).min(orig_height as f32) as u32;
+
+    // 确保裁剪区域居中且不超出原图范围
+    let mut crop_x =
+        (face_x as f32 - (crop_width as f32 - face_width as f32) / 2.0).max(0.0) as u32;
+    let mut crop_y =
+        (face_y as f32 - (crop_height as f32 - face_height as f32) / 2.0).max(0.0) as u32;
+
+    // 调整裁剪区域确保不超出图像边界
+    if crop_x + crop_width > orig_width {
+        crop_x = orig_width - crop_width;
+    }
+    if crop_y + crop_height > orig_height {
+        crop_y = orig_height - crop_height;
+    }
+
+    // 2. 裁剪图像
+    let cropped_img = img.crop_imm(crop_x, crop_y, crop_width, crop_height);
+
+    // 3. 确定缩放因子，保持纵横比
+    let crop_ratio = crop_width as f32 / crop_height as f32;
+    let (scaled_width, scaled_height, scale) = if crop_ratio > 1.0 {
+        // 横向图像，宽度适应目标尺寸
+        let new_width = target_size;
+        let new_height = (new_width as f32 / crop_ratio) as u32;
+        (new_width, new_height, new_width as f32 / crop_width as f32)
+    } else {
+        // 纵向图像，高度适应目标尺寸
+        let new_height = target_size;
+        let new_width = (new_height as f32 * crop_ratio) as u32;
+        (
+            new_width,
+            new_height,
+            new_height as f32 / crop_height as f32,
+        )
+    };
+
+    // 4. 调整大小
+    let resized_img =
+        cropped_img.resize_exact(scaled_width, scaled_height, imageops::FilterType::Lanczos3);
+
+    // 5. 创建目标方形图像并填充
+    let mut squared_img = RgbaImage::new(target_size, target_size);
+
+    // 计算居中偏移
+    let x_offset = (target_size - scaled_width) / 2;
+    let y_offset = (target_size - scaled_height) / 2;
+
+    // 复制调整大小后的图像到中心位置
+    squared_img
+        .copy_from(&resized_img, x_offset, y_offset)
+        .expect("Failed to copy image");
+
+    // 创建变换信息结构体
+    let transform_info = TransformInfo {
+        orig_width,
+        orig_height,
+        crop_x,
+        crop_y,
+        crop_width,
+        crop_height,
+        pad_x_offset: x_offset,
+        pad_y_offset: y_offset,
+        scale,
+        target_size,
+    };
+
+    (DynamicImage::ImageRgba8(squared_img), transform_info)
 }

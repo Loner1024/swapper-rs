@@ -1,6 +1,6 @@
 use crate::frame::ProcessFrame;
 use anyhow::{Context, Result};
-use image::{imageops, imageops::FilterType, DynamicImage, ImageBuffer, Rgb, RgbImage};
+use image::{imageops, imageops::FilterType, DynamicImage, ImageBuffer, Rgba, RgbaImage};
 use ndarray::{Array, Dim};
 
 use ort::{
@@ -42,14 +42,18 @@ fn postprocess_output(
         output_shape[3],
     );
 
-    let mut img_buffer: RgbImage = ImageBuffer::new(w as u32, h as u32);
+    let mut img_buffer: RgbaImage = ImageBuffer::new(w as u32, h as u32);
 
     for y in 0..h {
         for x in 0..w {
-            let r = (output[[0, 0, y, x]].clamp(-1.0, 1.0) * 0.5 + 0.5) * 255.0;
-            let g = (output[[0, 1, y, x]].clamp(-1.0, 1.0) * 0.5 + 0.5) * 255.0;
-            let b = (output[[0, 2, y, x]].clamp(-1.0, 1.0) * 0.5 + 0.5) * 255.0;
-            img_buffer.put_pixel(x as u32, y as u32, Rgb([r as u8, g as u8, b as u8]));
+            let r = ((output[[0, 0, y, x]].clamp(-1.0, 1.0) * 0.5 + 0.5) * 255.0) as u8;
+            let g = ((output[[0, 1, y, x]].clamp(-1.0, 1.0) * 0.5 + 0.5) * 255.0) as u8;
+            let b = ((output[[0, 2, y, x]].clamp(-1.0, 1.0) * 0.5 + 0.5) * 255.0) as u8;
+            let mut alpha = 255;
+            if r == 0 && g == 0 && b == 0 {
+                alpha = 0
+            }
+            img_buffer.put_pixel(x as u32, y as u32, Rgba([r, g, b, alpha]));
         }
     }
 
@@ -61,7 +65,7 @@ fn postprocess_output(
         FilterType::Lanczos3,
     );
 
-    Ok(DynamicImage::ImageRgb8(resized))
+    Ok(DynamicImage::ImageRgba8(resized))
 }
 
 impl ProcessFrame for FaceEnhancer {
@@ -100,46 +104,6 @@ impl FaceEnhancer {
         }
         Ok(processed_image)
     }
-
-    // /// 融合处理结果到原图
-    // fn blend_face(
-    //     &self,
-    //     background: &mut RgbImage,
-    //     face: &DynamicImage,
-    //     mask: &GrayImage,
-    //     x: u32,
-    //     y: u32,
-    // ) {
-    //     let face_rgb = face.to_rgb8();
-    //     let (width, height) = (face_rgb.width(), face_rgb.height());
-    //
-    //     // 确保掩码尺寸匹配
-    //     assert_eq!(mask.width(), width, "掩码宽度不匹配");
-    //     assert_eq!(mask.height(), height, "掩码高度不匹配");
-    //
-    //     for fy in 0..height {
-    //         for fx in 0..width {
-    //             let alpha = mask.get_pixel(fx, fy)[0] as f32 / 255.0;
-    //             let bg_x = x + fx;
-    //             let bg_y = y + fy;
-    //
-    //             // 边界检查
-    //             if bg_x >= background.width() || bg_y >= background.height() {
-    //                 continue;
-    //             }
-    //
-    //             let face_pixel = face_rgb.get_pixel(fx, fy);
-    //             let bg_pixel = background.get_pixel_mut(bg_x, bg_y);
-    //
-    //             // 线性混合
-    //             bg_pixel.0 = [
-    //                 (face_pixel[0] as f32 * alpha + bg_pixel[0] as f32 * (1.0 - alpha)) as u8,
-    //                 (face_pixel[1] as f32 * alpha + bg_pixel[1] as f32 * (1.0 - alpha)) as u8,
-    //                 (face_pixel[2] as f32 * alpha + bg_pixel[2] as f32 * (1.0 - alpha)) as u8,
-    //             ];
-    //         }
-    //     }
-    // }
 }
 
 /// 阈值配置结构体
