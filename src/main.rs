@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use ort::execution_providers::CoreMLExecutionProvider;
 use std::time::Instant;
 use swapper_rs::face_processor::face_xseg::FaceXseger;
-use swapper_rs::face_swapper::face_swapper::FaceSwapper;
+use swapper_rs::face_swapper::hires_swapper::HiresSwapper;
 use swapper_rs::frame::enhance::FaceEnhancer;
 use swapper_rs::post_processor::post_processor::PostProcessor;
 use swapper_rs::pre_processor::pre_processor::PreProcessor;
@@ -27,7 +27,7 @@ fn main() -> Result<()> {
     let pre_process_result = pre_processor.process(&mut source_img, &mut target_img)?;
     println!("pre_processing in {:?}s", now.elapsed());
 
-    let mut face_swapper = FaceSwapper::new(FACE_SWAP_MODEL_PATH)?;
+    let mut face_swapper = HiresSwapper::new(FACE_SWAP_MODEL_PATH)?;
     let (face, _) = face_swapper.swap_face(
         &mut pre_process_result.target_face.clone(),
         pre_process_result.face_recognition_source.clone(),

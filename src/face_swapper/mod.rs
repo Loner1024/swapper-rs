@@ -1,1 +1,2 @@
-pub mod face_swapper;
+pub mod hires_swapper;
+pub mod inswapper;

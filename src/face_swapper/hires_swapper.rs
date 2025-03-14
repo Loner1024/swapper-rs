@@ -11,11 +11,11 @@ use ort::value::{Tensor, TensorRef};
 use palette::{FromColor, Lab, Srgb, Srgba};
 use std::marker::PhantomData;
 
-pub struct FaceSwapper {
+pub struct HiresSwapper {
     model: Session,
 }
 
-impl FaceSwapper {
+impl HiresSwapper {
     pub fn new(model_path: &str) -> Result<Self, ort::Error> {
         let model = Session::builder()?
             .with_optimization_level(GraphOptimizationLevel::Level3)?
