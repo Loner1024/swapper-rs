@@ -26,7 +26,7 @@ impl YOLOFaceDetector {
         // 创建会话
         let model = Session::builder()?
             .with_optimization_level(GraphOptimizationLevel::Level3)?
-            .with_intra_threads(1)?
+            .with_intra_threads(8)?
             .commit_from_file(model_path)?;
 
         Ok(Self {

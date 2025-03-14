@@ -16,8 +16,8 @@ impl FaceXseger {
     pub fn new(model_path: &str) -> Result<Self> {
         // 加载模型
         let model = Session::builder()?
-            .with_optimization_level(GraphOptimizationLevel::Level1)?
-            .with_intra_threads(1)?
+            .with_optimization_level(GraphOptimizationLevel::Level3)?
+            .with_intra_threads(8)?
             .commit_from_file(model_path)?;
 
         Ok(FaceXseger { model })
