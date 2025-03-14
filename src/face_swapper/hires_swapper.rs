@@ -1,15 +1,12 @@
 use crate::log;
-use crate::utils::process_img::{grayscale_tensor_as_image, preprocess_image_with_padding_square};
+use crate::utils::process_img::{grayscale_tensor_as_image, preprocess_image_with_padding_square, reinhard_color_transfer};
 use anyhow::{Context, Result};
 use image::imageops::FilterType;
 use image::{imageops, DynamicImage, GrayImage, ImageBuffer, Rgb, RgbImage};
-use imageproc::drawing::Canvas;
-use ndarray::{array, Array1, Array2, ArrayViewD};
+use ndarray::{Array2, ArrayViewD};
 use ort::session::builder::GraphOptimizationLevel;
 use ort::session::Session;
 use ort::value::{Tensor, TensorRef};
-use palette::{FromColor, Lab, Srgb, Srgba};
-use std::marker::PhantomData;
 
 pub struct HiresSwapper {
     model: Session,
@@ -107,130 +104,3 @@ fn postprocess_output(
     Ok(DynamicImage::ImageRgb8(resized))
 }
 
-// Reinhard 颜色迁移核心逻辑
-pub fn reinhard_color_transfer(
-    src_img: &DynamicImage,
-    target_img: &DynamicImage,
-) -> Result<RgbImage> {
-    // 统一图像尺寸 (假设模型输出需要对齐到目标尺寸)
-    let target_size = target_img.dimensions();
-    let resized_src = src_img.resize_exact(target_size.0, target_size.1, image::imageops::Triangle);
-
-    // 转换到 LAB 颜色空间
-    let (src_lab, target_lab) = convert_to_lab(&resized_src, target_img)?;
-
-    // 计算统计量
-    let src_stats = compute_lab_stats(&src_lab);
-    let target_stats = compute_lab_stats(&target_lab);
-
-    // 调整颜色分布
-    let adjusted_lab = adjust_lab_channels(&src_lab, &src_stats, &target_stats);
-
-    // 转回 RGB 并生成图像
-    lab_to_rgb_image(adjusted_lab, target_size)
-}
-
-// RGB 转 LAB 颜色空间 (使用 palette 库)
-fn convert_to_lab(src: &DynamicImage, target: &DynamicImage) -> Result<(Vec<Lab>, Vec<Lab>)> {
-    let src_lab: Vec<Lab> = src
-        .to_rgb32f()
-        .pixels()
-        .map(|p| {
-            let rgb = Srgb::new(p.0[0], p.0[1], p.0[2]).into_linear();
-            Lab::from_color(rgb)
-        })
-        .collect();
-
-    let target_lab: Vec<Lab> = target
-        .to_rgb32f()
-        .pixels()
-        .map(|p| {
-            let rgb = Srgb::new(p.0[0], p.0[1], p.0[2]).into_linear();
-            Lab::from_color(rgb)
-        })
-        .collect();
-
-    Ok((src_lab, target_lab))
-}
-
-// 计算 LAB 各通道均值和标准差
-fn compute_lab_stats(lab_pixels: &[Lab]) -> [Array1<f32>; 3] {
-    let mut l_channel = Vec::new();
-    let mut a_channel = Vec::new();
-    let mut b_channel = Vec::new();
-
-    for lab in lab_pixels {
-        l_channel.push(lab.l);
-        a_channel.push(lab.a);
-        b_channel.push(lab.b);
-    }
-
-    [
-        compute_mean_std(&l_channel),
-        compute_mean_std(&a_channel),
-        compute_mean_std(&b_channel),
-    ]
-}
-
-// 均值和标准差计算
-fn compute_mean_std(data: &[f32]) -> Array1<f32> {
-    let sum: f32 = data.iter().sum();
-    let mean = sum / data.len() as f32;
-
-    let variance: f32 = data.iter().map(|v| (v - mean).powi(2)).sum::<f32>() / data.len() as f32;
-
-    array![mean, variance.sqrt()]
-}
-
-// 调整 LAB 通道
-fn adjust_lab_channels(
-    src_lab: &[Lab],
-    src_stats: &[Array1<f32>; 3],
-    target_stats: &[Array1<f32>; 3],
-) -> Vec<Lab> {
-    let data: PhantomData<palette::white_point::D65> = Default::default();
-    src_lab
-        .iter()
-        .map(|lab| {
-            let l = adjust_channel(lab.l, &src_stats[0], &target_stats[0]);
-            let a = adjust_channel(lab.a, &src_stats[1], &target_stats[1]);
-            let b = adjust_channel(lab.b, &src_stats[2], &target_stats[2]);
-            Lab {
-                l,
-                a,
-                b,
-                white_point: data,
-            }
-        })
-        .collect()
-}
-
-// 单通道调整公式
-fn adjust_channel(val: f32, src_stat: &Array1<f32>, target_stat: &Array1<f32>) -> f32 {
-    let eps = 1e-6; // 防止除零
-    let src_mean = src_stat[0];
-    let src_std = src_stat[1].max(eps);
-    let target_mean = target_stat[0];
-    let target_std = target_stat[1].max(eps);
-
-    ((val - src_mean) / src_std) * target_std + target_mean
-}
-
-// LAB 转 RGB 并生成图像
-fn lab_to_rgb_image(lab_pixels: Vec<Lab>, size: (u32, u32)) -> Result<RgbImage> {
-    let mut img = RgbImage::new(size.0, size.1);
-
-    for (i, lab) in lab_pixels.into_iter().enumerate() {
-        let x = (i % size.0 as usize) as u32;
-        let y = (i / size.0 as usize) as u32;
-
-        // 转换到 sRGB 并限制范围
-        let rgb: Srgba<f32> = Srgba::from_color(lab).into_format();
-        let r = (rgb.red * 255.0).round().clamp(0.0, 255.0) as u8;
-        let g = (rgb.green * 255.0).round().clamp(0.0, 255.0) as u8;
-        let b = (rgb.blue * 255.0).round().clamp(0.0, 255.0) as u8;
-        img.put_pixel(x, y, Rgb([r, g, b]));
-    }
-
-    Ok(img)
-}

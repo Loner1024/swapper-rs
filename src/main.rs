@@ -2,12 +2,14 @@ use anyhow::{Context, Result};
 use ort::execution_providers::CoreMLExecutionProvider;
 use std::time::Instant;
 use swapper_rs::face_processor::face_xseg::FaceXseger;
-use swapper_rs::face_swapper::hires_swapper::HiresSwapper;
+use swapper_rs::face_swapper::inswapper::InSwapper;
 use swapper_rs::frame::enhance::FaceEnhancer;
 use swapper_rs::post_processor::post_processor::PostProcessor;
 use swapper_rs::pre_processor::pre_processor::PreProcessor;
 
-const FACE_SWAP_MODEL_PATH: &str = "./models/9O_865k.onnx";
+#[allow(unused)]
+const HIRES_FACE_SWAP_MODEL_PATH: &str = "./models/9O_865k.onnx";
+const INSWAPPER_FACE_SWAP_MODEL_PATH: &str = "./models/inswapper_128_fp16.onnx";
 const FACE_ENHANCE_MODEL_PATH: &str = "./models/GFPGANv1.4.onnx";
 const FACE_XSEG_MODEL_PATH: &str = "./models/xseg.onnx";
 fn main() -> Result<()> {
@@ -27,11 +29,17 @@ fn main() -> Result<()> {
     let pre_process_result = pre_processor.process(&mut source_img, &mut target_img)?;
     println!("pre_processing in {:?}s", now.elapsed());
 
-    let mut face_swapper = HiresSwapper::new(FACE_SWAP_MODEL_PATH)?;
-    let (face, _) = face_swapper.swap_face(
-        &mut pre_process_result.target_face.clone(),
+    // let mut face_swapper = HiresSwapper::new(FACE_SWAP_MODEL_PATH)?;
+    // let (face, _) = face_swapper.swap_face(
+    //     &mut pre_process_result.target_face.clone(),
+    //     pre_process_result.face_recognition_source.clone(),
+    // )?;
+    let mut face_swapper = InSwapper::new(INSWAPPER_FACE_SWAP_MODEL_PATH)?;
+    let face = face_swapper.swap_face(
+        &pre_process_result.target_face.clone(),
         pre_process_result.face_recognition_source.clone(),
     )?;
+
     let mut xseger = FaceXseger::new(FACE_XSEG_MODEL_PATH)?;
     let xseg_mask = xseger.process_image(&face)?;
     println!("swap face in {:?}s", now.elapsed());
