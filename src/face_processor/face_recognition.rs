@@ -22,13 +22,15 @@ impl FaceRecognition {
 
     pub fn recognition(&mut self, face_image: &DynamicImage) -> Result<Array2<f32>> {
         let face_image = normalize_image(face_image, (112, 112));
+        let input_name = self.model.inputs[0].name.clone();
+        let output_name = self.model.outputs[0].name.clone();
 
         // 准备输入张量 (shape: [1, 3, 112, 112])
         let input_tensor = TensorRef::from_array_view(face_image.view())?;
 
         // 执行推理
-        let outputs = self.model.run(ort::inputs!["input" => input_tensor])?;
-        let face_recognition_data = outputs["output"].try_extract_tensor::<f32>()?;
+        let outputs = self.model.run(ort::inputs![input_name => input_tensor])?;
+        let face_recognition_data = outputs[output_name].try_extract_tensor::<f32>()?;
         let normalized_feature = l2_normalize(face_recognition_data.into_owned());
 
         Ok(normalized_feature.into_dimensionality()?.to_owned())
