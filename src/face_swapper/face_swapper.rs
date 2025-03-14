@@ -1,6 +1,6 @@
 use crate::log;
-use crate::utils::process_img::preprocess_image_with_padding_square;
-use anyhow::{anyhow, Context, Result};
+use crate::utils::process_img::{grayscale_tensor_as_image, preprocess_image_with_padding_square};
+use anyhow::{Context, Result};
 use image::imageops::FilterType;
 use image::{imageops, DynamicImage, GrayImage, ImageBuffer, Rgb, RgbImage};
 use imageproc::drawing::Canvas;
@@ -233,40 +233,4 @@ fn lab_to_rgb_image(lab_pixels: Vec<Lab>, size: (u32, u32)) -> Result<RgbImage> 
     }
 
     Ok(img)
-}
-
-fn grayscale_tensor_as_image(
-    tensor_data: ArrayViewD<f32>,
-    original_size: (u32, u32),
-) -> Result<GrayImage> {
-    // 检查形状是否符合预期 [1, 1, 256, 256]
-    if tensor_data.shape() != &[1, 1, 256, 256] {
-        return Err(anyhow!("Tensor shape is not [1, 1, 256, 256]"));
-    }
-
-    // 移除批次和通道维度（从 [1,1,256,256] 转为 [256,256]）
-    let tensor_slice = tensor_data
-        .index_axis_move(ndarray::Axis(0), 0) // 移除批次维度
-        .index_axis_move(ndarray::Axis(0), 0); // 移除通道维度
-
-    // 转换为灰度像素值（假设值范围是 [0,1]）
-    let mut image_data: Vec<u8> = Vec::with_capacity(256 * 256);
-    for y in 0..256 {
-        for x in 0..256 {
-            let value = tensor_slice[[y, x]];
-            let pixel = (value.clamp(0.0, 1.0) * 255.0) as u8;
-            image_data.push(pixel);
-        }
-    }
-
-    // 创建灰度图像缓冲区
-    let image: GrayImage = GrayImage::from_raw(256, 256, image_data)
-        .ok_or(anyhow!("Failed to create grayscale image buffer"))?;
-    let resized = imageops::resize(
-        &image,
-        original_size.0,
-        original_size.1,
-        FilterType::Lanczos3,
-    );
-    Ok(resized)
 }

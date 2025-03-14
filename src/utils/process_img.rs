@@ -1,11 +1,30 @@
 use crate::face_processor::face_parsing::FaceRawData;
 use crate::frame::enhance::FaceThresholds;
-use anyhow::Result;
+use anyhow::{anyhow, Result};
 use image::imageops::FilterType;
 use image::{
     imageops, DynamicImage, GenericImage, GenericImageView, GrayImage, Luma, Rgba, RgbaImage,
 };
-use ndarray::{Array, ArrayBase, ArrayD, Dim, Ix, IxDyn, OwnedRepr};
+use ndarray::{Array, ArrayBase, ArrayD, ArrayViewD, Dim, Ix, IxDyn, OwnedRepr};
+
+pub fn preprocess_image(
+    img: &DynamicImage,
+    target_size: u32,
+) -> Result<ArrayBase<OwnedRepr<f32>, Dim<[Ix; 4]>>> {
+    // 调整图像大小
+    let img_resized = img.resize(target_size, target_size, FilterType::Lanczos3);
+
+    let mut array = Array::zeros((1, 3, target_size as usize, target_size as usize));
+
+    // 假设模型需要归一化到[0,1]的RGB输入
+    for (x, y, pixel) in img_resized.to_rgb8().enumerate_pixels() {
+        array[[0, 0, y as usize, x as usize]] = pixel[0] as f32 / 255.0; // R
+        array[[0, 1, y as usize, x as usize]] = pixel[1] as f32 / 255.0; // G
+        array[[0, 2, y as usize, x as usize]] = pixel[2] as f32 / 255.0; // B
+    }
+
+    Ok(array)
+}
 
 // 预处理图像为模型输入格式
 pub fn preprocess_image_with_padding_square(
@@ -345,4 +364,39 @@ pub fn pad_to_square_with_size(
     };
 
     (DynamicImage::ImageRgba8(squared_img), transform_info)
+}
+
+pub fn grayscale_tensor_as_image(
+    tensor_data: ArrayViewD<f32>,
+    original_size: (u32, u32),
+) -> Result<GrayImage> {
+    // 检查形状是否符合预期 [1, 1, 256, 256]
+    if tensor_data.shape() != &[1, 1, 256, 256] {
+        return Err(anyhow!("Tensor shape is not [1, 1, 256, 256]"));
+    }
+    // 移除批次和通道维度（从 [1,1,256,256] 转为 [256,256]）
+    let tensor_slice = tensor_data
+        .index_axis_move(ndarray::Axis(0), 0) // 移除批次维度
+        .index_axis_move(ndarray::Axis(0), 0); // 移除通道维度
+
+    // 转换为灰度像素值（假设值范围是 [0,1]）
+    let mut image_data: Vec<u8> = Vec::with_capacity(256 * 256);
+    for y in 0..256 {
+        for x in 0..256 {
+            let value = tensor_slice[[y, x]];
+            let pixel = (value.clamp(0.0, 1.0) * 255.0) as u8;
+            image_data.push(pixel);
+        }
+    }
+
+    // 创建灰度图像缓冲区
+    let image: GrayImage = GrayImage::from_raw(256, 256, image_data)
+        .ok_or(anyhow!("Failed to create grayscale image buffer"))?;
+    let resized = imageops::resize(
+        &image,
+        original_size.0,
+        original_size.1,
+        FilterType::Lanczos3,
+    );
+    Ok(resized)
 }
