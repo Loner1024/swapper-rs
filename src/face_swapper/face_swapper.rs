@@ -2,7 +2,7 @@ use crate::log;
 use crate::utils::process_img::preprocess_image_with_padding_square;
 use anyhow::{anyhow, Context, Result};
 use image::imageops::FilterType;
-use image::{imageops, DynamicImage, GrayImage, ImageBuffer, Rgb, RgbImage, Rgba, RgbaImage};
+use image::{imageops, DynamicImage, GrayImage, ImageBuffer, Rgb, RgbImage};
 use imageproc::drawing::Canvas;
 use ndarray::{array, Array1, Array2, ArrayViewD};
 use ort::session::builder::GraphOptimizationLevel;
@@ -104,14 +104,14 @@ fn postprocess_output(
         original_size.1,
         FilterType::Triangle,
     );
-    Ok(DynamicImage::ImageRgba8(resized))
+    Ok(DynamicImage::ImageRgb8(resized))
 }
 
 // Reinhard 颜色迁移核心逻辑
 pub fn reinhard_color_transfer(
     src_img: &DynamicImage,
     target_img: &DynamicImage,
-) -> Result<RgbaImage> {
+) -> Result<RgbImage> {
     // 统一图像尺寸 (假设模型输出需要对齐到目标尺寸)
     let target_size = target_img.dimensions();
     let resized_src = src_img.resize_exact(target_size.0, target_size.1, image::imageops::Triangle);
@@ -217,8 +217,8 @@ fn adjust_channel(val: f32, src_stat: &Array1<f32>, target_stat: &Array1<f32>) -
 }
 
 // LAB 转 RGB 并生成图像
-fn lab_to_rgb_image(lab_pixels: Vec<Lab>, size: (u32, u32)) -> Result<RgbaImage> {
-    let mut img = RgbaImage::new(size.0, size.1);
+fn lab_to_rgb_image(lab_pixels: Vec<Lab>, size: (u32, u32)) -> Result<RgbImage> {
+    let mut img = RgbImage::new(size.0, size.1);
 
     for (i, lab) in lab_pixels.into_iter().enumerate() {
         let x = (i % size.0 as usize) as u32;
@@ -229,11 +229,7 @@ fn lab_to_rgb_image(lab_pixels: Vec<Lab>, size: (u32, u32)) -> Result<RgbaImage>
         let r = (rgb.red * 255.0).round().clamp(0.0, 255.0) as u8;
         let g = (rgb.green * 255.0).round().clamp(0.0, 255.0) as u8;
         let b = (rgb.blue * 255.0).round().clamp(0.0, 255.0) as u8;
-        let mut alpha = 255;
-        if r == 0 && g == 0 && b == 0 {
-            alpha = 0;
-        }
-        img.put_pixel(x, y, Rgba([r, g, b, alpha]));
+        img.put_pixel(x, y, Rgb([r, g, b]));
     }
 
     Ok(img)

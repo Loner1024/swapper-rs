@@ -2,10 +2,9 @@ use crate::face_processor::face_align::align_and_normalize_face;
 use crate::face_processor::face_parsing::{FaceParsing, FaceRawData};
 use crate::face_processor::face_recognition::FaceRecognition;
 use crate::face_processor::yolo_face_detector::YOLOFaceDetector;
-use crate::utils::process_img::{
-    blend_mask, generate_face_mask, pad_to_square_with_size, BoxDetection,
-};
+use crate::utils::process_img::BoxDetection;
 use anyhow::{Context, Result};
+use image::imageops::FilterType;
 use image::DynamicImage;
 use ndarray::Array2;
 
@@ -84,19 +83,17 @@ impl PreProcessor {
     // 人脸对齐
     fn align_face(
         &mut self,
-        face_img: &mut DynamicImage,
+        origin_img: &mut DynamicImage,
         face_raw_data: FaceRawData,
         face_rect: BoxDetection,
     ) -> Result<(DynamicImage, f32)> {
-        let face_img = face_img.crop(
+        let face_img = origin_img.crop(
             face_rect.x as u32,
             face_rect.y as u32,
             face_rect.width as u32,
             face_rect.height as u32,
         );
-        let (face_img, _) = pad_to_square_with_size(&face_img, 512, 0.0, None);
-        let face_mask = generate_face_mask(face_raw_data.clone(), &face_img)?;
-        // let face_with_mask_blend = blend_mask(&face_img, &face_mask)?;
+        let face_img = face_img.resize(512, 512, FilterType::Lanczos3);
 
         align_and_normalize_face(&face_img, face_raw_data)
     }
@@ -120,13 +117,22 @@ impl PreProcessor {
         Ok(face_raw_data)
     }
 
-    fn detect_face(&mut self, img: &DynamicImage) -> Result<Option<BoxDetection>> {
+    fn detect_face(&mut self, img: &mut DynamicImage) -> Result<Option<BoxDetection>> {
         let results = self.face_detector.detect(img)?;
         if results.is_empty() {
             Ok(None)
         } else {
-            let result = results[0];
-            Ok(Some(result))
+            let face_rect = results[0];
+            let size = face_rect.width.max(face_rect.height);
+            let x = face_rect.x - (size - face_rect.width) / 2.0;
+            let y = face_rect.y - (size - face_rect.height) / 2.0;
+            Ok(Some(BoxDetection {
+                x,
+                y,
+                width: size,
+                height: size,
+                conf: face_rect.conf,
+            }))
         }
     }
 }

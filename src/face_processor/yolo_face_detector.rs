@@ -112,7 +112,7 @@ impl YOLOFaceDetector {
                 y,
                 width,
                 height,
-                conf: 0.0,
+                conf: final_confidence,
             });
         }
 
@@ -196,7 +196,7 @@ impl YOLOFaceDetector {
         let mut debug_img = img.clone();
 
         for detection in detections {
-            let orig_detection = transform_info.convert_to_original_coordinates(&detection);
+            let orig_detection = transform_info.convert_to_original_coordinates(detection);
             // 在调试图像上绘制边界框
             let rect = Rect::at(orig_detection.x as i32, orig_detection.y as i32)
                 .of_size(orig_detection.width as u32, orig_detection.height as u32);
@@ -205,7 +205,7 @@ impl YOLOFaceDetector {
             // 添加到结果中
             results.push(orig_detection);
         }
-        debug_img.save("detect.png")?;
+        // debug_img.save("detect.png")?;
 
         // 将带有框的图像添加到结果中，方便调试
         // if results.is_empty() {

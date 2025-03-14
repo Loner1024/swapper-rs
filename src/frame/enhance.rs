@@ -1,6 +1,6 @@
 use crate::frame::ProcessFrame;
 use anyhow::{Context, Result};
-use image::{imageops, imageops::FilterType, DynamicImage, ImageBuffer, Rgba, RgbaImage};
+use image::{imageops, imageops::FilterType, DynamicImage, ImageBuffer, Rgb, RgbImage};
 use ndarray::{Array, Dim};
 
 use ort::{
@@ -42,18 +42,14 @@ fn postprocess_output(
         output_shape[3],
     );
 
-    let mut img_buffer: RgbaImage = ImageBuffer::new(w as u32, h as u32);
+    let mut img_buffer: RgbImage = ImageBuffer::new(w as u32, h as u32);
 
     for y in 0..h {
         for x in 0..w {
             let r = ((output[[0, 0, y, x]].clamp(-1.0, 1.0) * 0.5 + 0.5) * 255.0) as u8;
             let g = ((output[[0, 1, y, x]].clamp(-1.0, 1.0) * 0.5 + 0.5) * 255.0) as u8;
             let b = ((output[[0, 2, y, x]].clamp(-1.0, 1.0) * 0.5 + 0.5) * 255.0) as u8;
-            let mut alpha = 255;
-            if r == 0 && g == 0 && b == 0 {
-                alpha = 0
-            }
-            img_buffer.put_pixel(x as u32, y as u32, Rgba([r, g, b, alpha]));
+            img_buffer.put_pixel(x as u32, y as u32, Rgb([r, g, b]));
         }
     }
 
@@ -65,7 +61,7 @@ fn postprocess_output(
         FilterType::Lanczos3,
     );
 
-    Ok(DynamicImage::ImageRgba8(resized))
+    Ok(DynamicImage::ImageRgb8(resized))
 }
 
 impl ProcessFrame for FaceEnhancer {

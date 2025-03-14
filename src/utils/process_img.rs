@@ -171,7 +171,7 @@ pub fn draw_rect(img: &mut DynamicImage, x1: u32, x2: u32, y1: u32, y2: u32) {
     }
 }
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct BoxDetection {
     pub x: f32,
     pub y: f32,

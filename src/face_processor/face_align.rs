@@ -1,6 +1,6 @@
 use crate::face_processor::face_parsing::FaceRawData;
 use anyhow::{anyhow, Result};
-use image::{DynamicImage, ImageBuffer, Rgb, RgbImage, Rgba};
+use image::{DynamicImage, ImageBuffer, Rgb, RgbImage};
 use imageproc::geometric_transformations::{rotate_about_center, Interpolation};
 use ndarray::{Array3, Array4, ArrayView3, Axis};
 
@@ -122,12 +122,12 @@ pub fn align_and_normalize_face(
         angle += 180.0;
     }
     // 为对齐人脸，将图像旋转相反角度
-    let img_rgb = img.to_rgba8();
+    let img_rgb = img.to_rgb8();
     let aligned_img = rotate_about_center(
         &img_rgb,
         -angle.to_radians(),
         Interpolation::Bilinear,
-        Rgba([0, 0, 0, 0]),
+        Rgb([0, 0, 0]),
     );
     Ok((aligned_img.into(), angle.to_radians()))
 }
